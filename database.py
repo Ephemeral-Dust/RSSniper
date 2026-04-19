@@ -3,7 +3,9 @@ from pathlib import Path
 from datetime import datetime, timezone
 from typing import Optional
 
-DB_FILE = Path("seen_items.db")
+from paths import get_data_dir
+
+DB_FILE = get_data_dir() / "seen_items.db"
 
 
 def init_db(db_path: Path = DB_FILE) -> sqlite3.Connection:

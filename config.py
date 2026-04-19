@@ -1,7 +1,9 @@
 import json
 from pathlib import Path
 
-CONFIG_FILE = Path("config.json")
+from paths import get_data_dir
+
+CONFIG_FILE = get_data_dir() / "config.json"
 
 DEFAULT_CONFIG: dict = {
     # ── Watcher ────────────────────────────────────────────────────────────────
