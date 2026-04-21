@@ -7,6 +7,9 @@ A Python desktop application that monitors Reddit RSS feeds for posts matching y
 ## Features
 
 - **GUI dashboard** — tabbed interface (Deals, Feeds, Monitors, Log) built with tkinter; no browser required
+- **Dark / light / system theme** — Sun Valley (sv-ttk) theme with dark title bar; switchable per-session via Settings → Settings…
+- **Right-click context menus** — context menus on Deals, Feeds, and Monitors tabs for quick actions (open, copy, edit, remove, dismiss)
+- **System tray support** — minimise to system tray via the ⬇ Tray toolbar button; closing the window exits the app
 - **Background polling** — checks feeds on a configurable interval (default 15 min) in a daemon thread
 - **Keyword + price matching** — monitors trigger on any matching term; optionally cap at a max price
 - **Context-aware price extraction** — prices are matched to the line containing the keyword, avoiding mis-attribution in multi-item posts
@@ -16,7 +19,7 @@ A Python desktop application that monitors Reddit RSS feeds for posts matching y
 - **Published date tracking** — post publish times are stored and displayed alongside the discovered time
 - **New vs Historical status** — deals found in the current check are flagged 🆕 New; deals loaded from a previous session are 📦 Historical
 - **Desktop notifications** — Windows toast notifications via plyer (gracefully degrades if unavailable)
-- **Settings dialog** — all options (poll interval, lookback window, network timeouts, notifications) are editable in-app and persisted to `config.json`
+- **Settings dialog** — all options (poll interval, lookback window, network timeouts, notifications, theme) are editable in-app and persisted to `config.json`
 - **CLI mode** — headless operation for servers or scripting
 
 ---
@@ -32,6 +35,7 @@ requests>=2.31.0
 schedule>=1.2.0
 rich>=13.0.0
 plyer>=2.1.0
+sv-ttk>=2.6.0
 ```
 
 ---
@@ -71,8 +75,8 @@ The app opens with four tabs:
 | **Monitors** | Configure keyword/price rules; enable or disable each one              |
 | **Log**      | Live watcher activity with color-coded log levels                      |
 
-Use **⚡ Check Now** (toolbar or Watcher menu) to trigger an immediate check.
-Use **Watcher → Settings…** to adjust all configuration options without editing files.
+Use **⚡ Check Now** (toolbar button) to trigger an immediate check.
+Use **Settings → Settings…** to adjust all configuration options without editing files.
 
 ### CLI
 
@@ -90,18 +94,19 @@ python main.py add-monitor NAME --terms TERM1 TERM2 [--max-price 400] [--feeds F
 
 `config.json` is created automatically on first run with sensible defaults. All values can be changed via the Settings dialog in the GUI or by editing the file directly.
 
-| Key                               | Default                 | Description                                          |
-| --------------------------------- | ----------------------- | ---------------------------------------------------- |
-| `check_interval_minutes`          | `15`                    | How often the background scheduler polls feeds       |
-| `check_on_startup`                | `true`                  | Run a check immediately when the app launches        |
-| `max_lookback_days`               | `3`                     | How far back to page through feeds                   |
-| `max_entries_per_feed`            | `1000`                  | Hard cap on entries fetched per feed per check       |
-| `request_timeout_seconds`         | `15`                    | HTTP request timeout                                 |
-| `page_delay_seconds`              | `0.75`                  | Delay between paginated requests (be a good citizen) |
-| `user_agent`                      | `RedditDealWatcher/1.0` | User-Agent header sent to Reddit                     |
-| `notifications.desktop`           | `true`                  | Show Windows desktop toast on new deal               |
-| `notifications.console`           | `true`                  | Print matches to console in CLI mode                 |
-| `notifications.notify_historical` | `false`                 | Show notifications for DB-scan matches on startup    |
+| Key                               | Default                 | Description                                           |
+| --------------------------------- | ----------------------- | ----------------------------------------------------- |
+| `check_interval_minutes`          | `15`                    | How often the background scheduler polls feeds        |
+| `check_on_startup`                | `true`                  | Run a check immediately when the app launches         |
+| `max_lookback_days`               | `3`                     | How far back to page through feeds                    |
+| `max_entries_per_feed`            | `1000`                  | Hard cap on entries fetched per feed per check        |
+| `request_timeout_seconds`         | `15`                    | HTTP request timeout                                  |
+| `page_delay_seconds`              | `0.75`                  | Delay between paginated requests (be a good citizen)  |
+| `user_agent`                      | `RedditDealWatcher/1.0` | User-Agent header sent to Reddit                      |
+| `notifications.desktop`           | `true`                  | Show Windows desktop toast on new deal                |
+| `notifications.console`           | `true`                  | Print matches to console in CLI mode                  |
+| `notifications.notify_historical` | `false`                 | Show notifications for DB-scan matches on startup     |
+| `theme`                           | `"dark"`                | GUI colour scheme: `"dark"`, `"light"`, or `"system"` |
 
 ### Monitors
 
