@@ -2,8 +2,59 @@
 
 from __future__ import annotations
 
+import tkinter as tk
 from datetime import datetime, timezone
-from typing import Union
+from tkinter import ttk
+from typing import Callable, Union
+
+
+def apply_dialog_icon(dialog: tk.Toplevel) -> None:
+    """Apply the app icon to a Toplevel dialog window."""
+    try:
+        from paths import get_asset_dir
+
+        ico = get_asset_dir() / "icons" / "icon.ico"
+        if ico.exists():
+            dialog.iconbitmap(str(ico))
+    except Exception:
+        pass
+
+
+def attach_context_menu(
+    tree: ttk.Treeview,
+    items: list[tuple[str | None, Callable | None]],
+    *,
+    menu_kw: dict | None = None,
+) -> None:
+    """Attach a right-click context menu to a Treeview.
+
+    ``items`` is a list of (label, callback) pairs.  Pass ``(None, None)``
+    for a separator.  The callback receives the selected row iid as its
+    only argument; if no row is under the cursor the menu is not shown.
+
+    ``menu_kw`` is forwarded to ``tk.Menu`` (e.g. dark-theme colours).
+    """
+    kw = menu_kw or {}
+    menu = tk.Menu(tree, tearoff=False, **kw)
+    for label, cmd in items:
+        if label is None:
+            menu.add_separator()
+        else:
+            menu.add_command(label=label, command=lambda c=cmd: c())
+
+    def _show(event: tk.Event) -> None:
+        # Select the row under cursor first so callbacks have a focused item.
+        iid = tree.identify_row(event.y)
+        if not iid:
+            return
+        tree.focus(iid)
+        tree.selection_set(iid)
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    tree.bind("<Button-3>", _show)
 
 
 def fmt_dt(value: Union[str, datetime, None]) -> str:

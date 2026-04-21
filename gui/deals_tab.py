@@ -4,7 +4,7 @@ from datetime import datetime
 from tkinter import ttk
 from typing import Callable, Optional
 
-from gui.utils import fmt_dt
+from gui.utils import attach_context_menu, fmt_dt
 
 
 class DealsTab(ttk.Frame):
@@ -74,11 +74,24 @@ class DealsTab(ttk.Frame):
         self._tree.pack(side="left", fill="both", expand=True)
         vsb.pack(side="right", fill="y")
 
-        self._tree.tag_configure("new", background="#e6ffe6")  # green tint
         self._tree.tag_configure(
-            "historical", background="#fffbe6"
-        )  # yellow tint
+            "new", background="#1a472a"
+        )  # dark green (default)
+        self._tree.tag_configure(
+            "historical", background="#2d2d1a"
+        )  # dark yellow (default)
         self._tree.bind("<Double-1>", self._open_link)
+
+        attach_context_menu(
+            self._tree,
+            [
+                ("🌐 Open in Browser", self._ctx_open),
+                ("📋 Copy Title", self._ctx_copy_title),
+                ("🔗 Copy URL", self._ctx_copy_url),
+                (None, None),
+                ("🗑 Dismiss", self._ctx_dismiss),
+            ],
+        )
 
         ttk.Label(
             self,
@@ -125,6 +138,37 @@ class DealsTab(ttk.Frame):
         item = self._tree.focus()
         if item and item in self._links:
             webbrowser.open(self._links[item])
+
+    def _ctx_open(self) -> None:
+        self._open_link(None)
+
+    def _ctx_copy_title(self) -> None:
+        item = self._tree.focus()
+        if item:
+            title = self._tree.item(item)["values"][6]  # "title" column
+            self.clipboard_clear()
+            self.clipboard_append(str(title))
+
+    def _ctx_copy_url(self) -> None:
+        item = self._tree.focus()
+        if item and item in self._links:
+            self.clipboard_clear()
+            self.clipboard_append(self._links[item])
+
+    def _ctx_dismiss(self) -> None:
+        item = self._tree.focus()
+        if item:
+            self._links.pop(item, None)
+            self._tree.delete(item)
+
+    def set_theme(self, is_dark: bool) -> None:
+        """Update row highlight colours to match the active theme."""
+        if is_dark:
+            self._tree.tag_configure("new", background="#1a472a")
+            self._tree.tag_configure("historical", background="#2d2d1a")
+        else:
+            self._tree.tag_configure("new", background="#c8f0c8")
+            self._tree.tag_configure("historical", background="#f5f0c0")
 
     def clear(self) -> None:
         self._tree.delete(*self._tree.get_children())

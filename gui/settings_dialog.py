@@ -2,20 +2,23 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Optional
 
+from gui.utils import apply_dialog_icon
+
 
 def _center_on_parent(dialog: tk.Toplevel, parent: tk.Widget) -> None:
     dialog.update_idletasks()
-    pw = (
-        parent.winfo_rootx()
-        + parent.winfo_width() // 2
-        - dialog.winfo_width() // 2
-    )
-    ph = (
-        parent.winfo_rooty()
-        + parent.winfo_height() // 2
-        - dialog.winfo_height() // 2
-    )
-    dialog.geometry(f"+{pw}+{ph}")
+    # For windows with an explicit geometry("WxH") call, winfo_reqwidth/height
+    # may return 1 because PanedWindow/Treeview have tiny natural sizes.
+    # Parse the stored geometry string as a reliable source of the real size.
+    geo = dialog.geometry()  # "WxH+X+Y"
+    wh = geo.split("+")[0].split("x")
+    geo_w, geo_h = int(wh[0]), int(wh[1])
+    dw = max(geo_w, dialog.winfo_reqwidth())
+    dh = max(geo_h, dialog.winfo_reqheight())
+    pw = parent.winfo_rootx() + parent.winfo_width() // 2 - dw // 2
+    ph = parent.winfo_rooty() + parent.winfo_height() // 2 - dh // 2
+    dialog.geometry(f"{dw}x{dh}+{pw}+{ph}")
+    dialog.deiconify()
 
 
 class SettingsDialog(tk.Toplevel):
@@ -27,9 +30,11 @@ class SettingsDialog(tk.Toplevel):
 
     def __init__(self, parent: tk.Widget, config: dict) -> None:
         super().__init__(parent)
+        self.withdraw()
         self.title("Settings")
         self.resizable(False, False)
         self.grab_set()
+        apply_dialog_icon(self)
         self._cfg = config
         self.result: Optional[dict] = None
         self._build()
@@ -125,9 +130,25 @@ class SettingsDialog(tk.Toplevel):
         )
         nf.columnconfigure(1, weight=1)
 
+        # ── Appearance ─────────────────────────────────────────────────────────
+        af = ttk.LabelFrame(outer, text=" Appearance ", padding=10)
+        af.grid(row=4, column=0, sticky="ew", pady=(0, 8))
+
+        self._theme_var = tk.StringVar(value=self._cfg.get("theme", "dark"))
+        for col_idx, (label, value) in enumerate(
+            [
+                ("Dark", "dark"),
+                ("Light", "light"),
+                ("System Default", "system"),
+            ]
+        ):
+            ttk.Radiobutton(
+                af, text=label, variable=self._theme_var, value=value
+            ).grid(row=0, column=col_idx, sticky="w", padx=(0, 16))
+
         # ── Notifications ──────────────────────────────────────────────────────
         ntf = ttk.LabelFrame(outer, text=" Notifications ", padding=10)
-        ntf.grid(row=3, column=0, sticky="ew", pady=(0, 8))
+        ntf.grid(row=5, column=0, sticky="ew", pady=(0, 8))
 
         notify_cfg: dict = self._cfg.get("notifications", {})
 
@@ -160,10 +181,10 @@ class SettingsDialog(tk.Toplevel):
 
         # ── Buttons ────────────────────────────────────────────────────────────
         sep = ttk.Separator(outer, orient="horizontal")
-        sep.grid(row=4, column=0, sticky="ew", pady=(4, 0))
+        sep.grid(row=6, column=0, sticky="ew", pady=(4, 0))
 
         btn_frame = ttk.Frame(outer)
-        btn_frame.grid(row=5, column=0, sticky="e", pady=(10, 0))
+        btn_frame.grid(row=7, column=0, sticky="e", pady=(10, 0))
         ttk.Button(btn_frame, text="Cancel", command=self.destroy).pack(
             side="right"
         )
@@ -229,6 +250,7 @@ class SettingsDialog(tk.Toplevel):
             "request_timeout_seconds": timeout,
             "page_delay_seconds": page_delay,
             "user_agent": user_agent,
+            "theme": self._theme_var.get(),
             "notifications": {
                 "desktop": self._notify_desktop_var.get(),
                 "notify_historical": self._notify_historical_var.get(),

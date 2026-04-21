@@ -19,3 +19,14 @@ def get_data_dir() -> Path:
         data_dir.mkdir(parents=True, exist_ok=True)
         return data_dir
     return Path.cwd()
+
+
+def get_asset_dir() -> Path:
+    """Return the directory containing bundled assets (icons, etc.).
+
+    When frozen by PyInstaller, assets live in sys._MEIPASS.
+    When running from source they live next to this file.
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys._MEIPASS)  # type: ignore[attr-defined]
+    return Path(__file__).parent

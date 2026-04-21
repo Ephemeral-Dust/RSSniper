@@ -79,5 +79,6 @@
   "max_lookback_days": 3,
   "max_entries_per_feed": 1000,
   "request_timeout_seconds": 15,
-  "page_delay_seconds": 0.75
+  "page_delay_seconds": 0.75,
+  "theme": "system"
 }

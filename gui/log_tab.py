@@ -29,10 +29,10 @@ class QueueHandler(logging.Handler):
 class LogTab(ttk.Frame):
     _LEVEL_COLORS = {
         "DEBUG": "#888888",
-        "INFO": "#1a1a1a",
-        "WARNING": "#b36b00",
-        "ERROR": "#cc0000",
-        "CRITICAL": "#cc0000",
+        "INFO": "#d4d4d4",
+        "WARNING": "#f0a030",
+        "ERROR": "#f04040",
+        "CRITICAL": "#ff4040",
     }
 
     def __init__(self, parent: ttk.Notebook) -> None:
@@ -52,6 +52,11 @@ class LogTab(ttk.Frame):
             wrap="word",
             font=("Consolas", 9),
             relief="flat",
+            background="#1c1c1c",
+            foreground="#d4d4d4",
+            insertbackground="#d4d4d4",
+            selectbackground="#0078d4",
+            selectforeground="#ffffff",
         )
         self._text.pack(fill="both", expand=True, padx=6, pady=6)
 

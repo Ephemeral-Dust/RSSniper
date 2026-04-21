@@ -1,17 +1,29 @@
+import ctypes
 import logging
 import queue
+import sys
 import threading
 import time
 from datetime import datetime
 from typing import Optional
 
 import schedule
+import sv_ttk
 import tkinter as tk
 from tkinter import messagebox, ttk
+
+try:
+    import pystray
+    from PIL import Image, ImageDraw
+
+    _TRAY_AVAILABLE = True
+except ImportError:
+    _TRAY_AVAILABLE = False
 
 from config import load_config, save_config
 from database import DB_FILE, init_db, get_recent_deal_matches
 from notifications import notify_desktop
+from paths import get_asset_dir
 from watcher import run_check, MAX_LOOKBACK_DAYS
 from gui.deals_tab import DealsTab
 from gui.feeds_tab import FeedsTab
@@ -33,13 +45,22 @@ class App(tk.Tk):
         self._checking = False
         self._watcher_running = False
         self._watcher_thread: Optional[threading.Thread] = None
+        self._tray_icon: Optional[object] = None
+        self._tray_started = False
 
-        self._setup_style()
+        self._setup_style()  # sets _menu_kw and sv_ttk theme
+        self._menubar_frame = tk.Frame(self)  # persistent frame, always at top
+        self._menubar_frame.pack(fill="x", side="top")
         self._build_menu()
         self._build_ui()
         self._setup_logging()
         self._start_scheduler()
+        self._apply_icon()
+        self._build_tray_icon()
+        # Re-apply theme now that all tabs exist so they get correct colours
+        self._apply_theme(self._config.get("theme", "dark"))
 
+        # X button minimizes to tray when available, otherwise closes.
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.after(100, self._poll_queue)
         self.after(
@@ -50,43 +71,159 @@ class App(tk.Tk):
 
     # ── Style ──────────────────────────────────────────────────────────────────
 
+    _LOG_COLORS_DARK = {
+        "DEBUG": "#888888",
+        "INFO": "#d4d4d4",
+        "WARNING": "#f0a030",
+        "ERROR": "#f04040",
+        "CRITICAL": "#ff4040",
+    }
+    _LOG_COLORS_LIGHT = {
+        "DEBUG": "#888888",
+        "INFO": "#1a1a1a",
+        "WARNING": "#b36b00",
+        "ERROR": "#cc0000",
+        "CRITICAL": "#cc0000",
+    }
+
     def _setup_style(self) -> None:
+        # Initial menu_kw placeholder (populated by _apply_theme)
+        self._menu_kw: dict = {}
         style = ttk.Style(self)
-        for theme in ("vista", "clam"):
-            try:
-                style.theme_use(theme)
-                break
-            except tk.TclError:
-                continue
-        style.configure("Status.TLabel", foreground="#555555", padding=(6, 2))
+        style.configure("Status.TLabel", padding=(6, 2))
+        self._apply_theme(self._config.get("theme", "dark"))
+
+    def _apply_theme(self, theme: str) -> None:
+        """Apply dark/light/system theme. Safe to call after initial setup."""
+        if theme == "system":
+            # Detect system preference via Windows registry if available
+            resolved = "dark"
+            if sys.platform == "win32":
+                try:
+                    import winreg
+
+                    key = winreg.OpenKey(
+                        winreg.HKEY_CURRENT_USER,
+                        r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+                    )
+                    val, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+                    resolved = "light" if val == 1 else "dark"
+                except Exception:
+                    resolved = "dark"
+        else:
+            resolved = theme  # "dark" or "light"
+
+        sv_ttk.set_theme(resolved)
+
+        is_dark = resolved == "dark"
+        menu_bg = "#1c1c1c" if is_dark else "#f0f0f0"
+        menu_fg = "#ffffff" if is_dark else "#000000"
+        menu_abg = "#0078d4"
+        menu_afg = "#ffffff"
+        self._menu_kw = dict(
+            background=menu_bg,
+            foreground=menu_fg,
+            activebackground=menu_abg,
+            activeforeground=menu_afg,
+            relief="flat",
+            borderwidth=0,
+        )
+
+        # Update title bar
+        self._apply_dark_titlebar(is_dark)
+
+        # Rebuild the custom menu bar with new colours
+        if hasattr(self, "_menubar_frame"):
+            self._build_menu()
+
+        # Update deals tab row tag colours
+        if hasattr(self, "_deals_tab"):
+            self._deals_tab.set_theme(is_dark)
+
+        # Update log tab colours if already built
+        if hasattr(self, "_log_tab"):
+            colors = (
+                self._LOG_COLORS_DARK if is_dark else self._LOG_COLORS_LIGHT
+            )
+            text_widget = self._log_tab._text
+            bg = "#1c1c1c" if is_dark else "#ffffff"
+            fg = "#d4d4d4" if is_dark else "#1a1a1a"
+            text_widget.config(background=bg, foreground=fg)
+            for level, color in colors.items():
+                text_widget.tag_configure(level, foreground=color)
+
+    def _apply_dark_titlebar(self, is_dark: bool = True) -> None:
+        """Ask Windows DWM to render a dark or light title bar on Windows 10/11."""
+        if sys.platform != "win32":
+            return
+        try:
+            DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+            self.update()  # ensure HWND is realised
+            hwnd = ctypes.windll.user32.GetParent(self.winfo_id())
+            if not hwnd:
+                hwnd = self.winfo_id()
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_USE_IMMERSIVE_DARK_MODE,
+                ctypes.byref(ctypes.c_int(1 if is_dark else 0)),
+                ctypes.sizeof(ctypes.c_int),
+            )
+        except Exception:
+            pass  # silently ignore on unsupported Windows versions
 
     # ── Menu ───────────────────────────────────────────────────────────────────
 
     def _build_menu(self) -> None:
-        menubar = tk.Menu(self)
-        self.config(menu=menubar)
+        # Clear and repopulate the persistent _menubar_frame so pack order
+        # is never disturbed when the theme changes.
+        for w in self._menubar_frame.winfo_children():
+            w.destroy()
 
-        file_menu = tk.Menu(menubar, tearoff=False)
+        is_dark = self._menu_kw.get("foreground", "#ffffff") == "#ffffff"
+        bg = self._menu_kw.get("background", "#1c1c1c")
+        fg = self._menu_kw.get("foreground", "#ffffff")
+        hover_bg = "#2d2d2d" if is_dark else "#dcdcdc"
+
+        self._menubar_frame.config(bg=bg)
+
+        def _mb(label: str) -> tk.Menubutton:
+            btn = tk.Menubutton(
+                self._menubar_frame,
+                text=label,
+                bg=bg,
+                fg=fg,
+                activebackground=hover_bg,
+                activeforeground=fg,
+                relief="flat",
+                padx=8,
+                pady=4,
+                bd=0,
+                cursor="arrow",
+            )
+            btn.pack(side="left")
+            return btn
+
+        # File menu — menu must be a child of its Menubutton
+        mb_file = _mb("File")
+        file_menu = tk.Menu(mb_file, tearoff=False, **self._menu_kw)
         file_menu.add_command(
             label="Reload Config", command=self._reload_config
         )
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self._on_close)
-        menubar.add_cascade(label="File", menu=file_menu)
+        mb_file.config(menu=file_menu)
 
-        watcher_menu = tk.Menu(menubar, tearoff=False)
-        watcher_menu.add_command(
-            label="Check Now", command=self._trigger_check
-        )
-        watcher_menu.add_separator()
-        watcher_menu.add_command(
+        mb_settings = _mb("Settings")
+        settings_menu = tk.Menu(mb_settings, tearoff=False, **self._menu_kw)
+        settings_menu.add_command(
             label="Settings…", command=self._open_settings
         )
-        menubar.add_cascade(label="Watcher", menu=watcher_menu)
+        mb_settings.config(menu=settings_menu)
 
-        help_menu = tk.Menu(menubar, tearoff=False)
+        mb_help = _mb("Help")
+        help_menu = tk.Menu(mb_help, tearoff=False, **self._menu_kw)
         help_menu.add_command(label="About", command=self._show_about)
-        menubar.add_cascade(label="Help", menu=help_menu)
+        mb_help.config(menu=help_menu)
 
     # ── UI ─────────────────────────────────────────────────────────────────────
 
@@ -103,6 +240,10 @@ class App(tk.Tk):
         ttk.Label(
             toolbar, textvariable=self._interval_var, foreground="#555"
         ).pack(side="left", padx=8)
+
+        ttk.Button(
+            toolbar, text="⬇ Tray", command=self._minimize_to_tray
+        ).pack(side="right")
 
         ttk.Separator(self, orient="horizontal").pack(fill="x")
 
@@ -136,6 +277,74 @@ class App(tk.Tk):
             relief="sunken",
             anchor="w",
         ).pack(fill="x", side="bottom")
+
+    # ── System tray ────────────────────────────────────────────────────────────
+
+    def _apply_icon(self) -> None:
+        """Set the window titlebar/taskbar icon."""
+        ico = get_asset_dir() / "icons" / "icon.ico"
+        if ico.exists():
+            try:
+                self.iconbitmap(str(ico))
+            except Exception:
+                pass
+
+    def _build_tray_icon(self) -> None:
+        if not _TRAY_AVAILABLE:
+            return
+        # Use the real .ico if available, otherwise fall back to a drawn icon.
+        ico_path = get_asset_dir() / "icons" / "icon.ico"
+        if ico_path.exists():
+            img = Image.open(str(ico_path)).convert("RGBA").resize((64, 64))
+        else:
+            img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(img)
+            draw.ellipse([2, 2, 62, 62], fill="#e94560")
+            draw.ellipse([22, 18, 42, 46], outline="white", width=5)
+            draw.line([42, 32, 54, 52], fill="white", width=5)
+
+        def _on_tray_show(icon, item):
+            self.after(0, self._restore_from_tray)
+
+        def _on_tray_check(icon, item):
+            self.after(0, self._trigger_check)
+
+        def _on_tray_exit(icon, item):
+            self.after(0, self._exit_app)
+
+        menu = pystray.Menu(
+            pystray.MenuItem("Show", _on_tray_show, default=True),
+            pystray.MenuItem("Check Now", _on_tray_check),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Exit", _on_tray_exit),
+        )
+        self._tray_icon = pystray.Icon(
+            "RedditDealWatcher", img, "RedditDealWatcher", menu
+        )
+
+    def _minimize_to_tray(self) -> None:
+        if self._tray_icon is None:
+            # pystray not available — just iconify normally.
+            self.iconify()
+            return
+        self.withdraw()
+        if not self._tray_started:
+            self._tray_icon.run_detached()
+            self._tray_started = True
+        else:
+            self._tray_icon.visible = True
+
+    def _restore_from_tray(self) -> None:
+        if self._tray_icon is not None:
+            self._tray_icon.visible = False
+        self.deiconify()
+        self.lift()
+        self.focus_force()
+
+    def _exit_app(self) -> None:
+        if self._tray_icon is not None and self._tray_started:
+            self._tray_icon.stop()
+        self._on_close()
 
     # ── Logging ────────────────────────────────────────────────────────────────
 
@@ -292,6 +501,7 @@ class App(tk.Tk):
         updated = dict(self._config)
         updated.update(dlg.result)
         self._on_config_save(updated)
+        self._apply_theme(updated.get("theme", "dark"))
         self._start_scheduler()  # restart scheduler with new interval
 
     def _on_config_save(self, config: dict) -> None:
@@ -326,6 +536,11 @@ class App(tk.Tk):
 
     def _on_close(self) -> None:
         self._watcher_running = False
+        if self._tray_icon is not None and self._tray_started:
+            try:
+                self._tray_icon.stop()
+            except Exception:
+                pass
         try:
             self._conn.close()
         except Exception:

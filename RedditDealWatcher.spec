@@ -6,7 +6,7 @@ Build with:
 Output: dist/RedditDealWatcher.exe
 """
 
-from PyInstaller.utils.hooks import collect_submodules, collect_data_files
+from PyInstaller.utils.hooks import collect_submodules, collect_data_files, collect_all
 
 block_cipher = None
 
@@ -16,16 +16,28 @@ plyer_hidden = collect_submodules("plyer")
 # feedparser uses lazy imports for its date/content parsers.
 feedparser_hidden = collect_submodules("feedparser")
 
+# pystray has platform-specific backends.
+pystray_hidden = collect_submodules("pystray")
+
+# sv-ttk bundles TCL theme files that must be included as data.
+sv_ttk_datas, sv_ttk_binaries, sv_ttk_hidden = collect_all("sv_ttk")
+
 a = Analysis(
     ["main.py"],
     pathex=[],
-    binaries=[],
+    binaries=[
+        *sv_ttk_binaries,
+    ],
     datas=[
-        # No static assets needed — config/db are created at runtime.
+        # Bundle the icons folder so get_asset_dir() can find icon.ico at runtime.
+        ("icons", "icons"),
+        *sv_ttk_datas,
     ],
     hiddenimports=[
         *plyer_hidden,
         *feedparser_hidden,
+        *pystray_hidden,
+        *sv_ttk_hidden,
         # tkinter is stdlib but PyInstaller occasionally needs a nudge.
         "tkinter",
         "tkinter.ttk",
@@ -44,6 +56,11 @@ a = Analysis(
         "rich.console",
         "requests",
         "charset_normalizer",  # requests dependency
+        # pystray + Pillow for system tray icon.
+        "pystray",
+        "PIL",
+        "PIL.Image",
+        "PIL.ImageDraw",
     ],
     hookspath=[],
     hooksconfig={},
@@ -83,5 +100,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    # icon="icon.ico",  # uncomment and supply an .ico file to set an icon
+    icon="icons/icon.ico",
 )

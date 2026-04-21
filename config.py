@@ -59,6 +59,7 @@ DEFAULT_CONFIG: dict = {
         "notify_historical": False,
     },
     "user_agent": "RedditDealWatcher/1.0 (personal use)",
+    "theme": "dark",
 }
 
 

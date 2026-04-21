@@ -2,6 +2,8 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 from typing import Callable
 
+from gui.utils import attach_context_menu
+
 
 class MonitorsTab(ttk.Frame):
     _COLUMNS = ("name", "terms", "max_price", "feeds", "enabled")
@@ -65,6 +67,18 @@ class MonitorsTab(ttk.Frame):
         self._tree.configure(yscrollcommand=vsb.set)
         self._tree.pack(side="left", fill="both", expand=True)
         vsb.pack(side="right", fill="y")
+
+        attach_context_menu(
+            self._tree,
+            [
+                ("✏️ Edit", self._edit),
+                ("🔄 Toggle Enable/Disable", self._toggle),
+                ("📋 Copy Name", self._ctx_copy_name),
+                ("📋 Copy Terms", self._ctx_copy_terms),
+                (None, None),
+                ("🗑 Remove", self._remove),
+            ],
+        )
 
     def refresh(self) -> None:
         self._tree.delete(*self._tree.get_children())
@@ -162,6 +176,19 @@ class MonitorsTab(ttk.Frame):
             m for m in config["monitors"] if m["name"] != name
         ]
         self._save_config(config)
+
+    def _ctx_copy_name(self) -> None:
+        name = self._selected_name()
+        if name:
+            self.clipboard_clear()
+            self.clipboard_append(name)
+
+    def _ctx_copy_terms(self) -> None:
+        sel = self._tree.focus()
+        if sel:
+            terms = self._tree.item(sel)["values"][1]  # "terms" column
+            self.clipboard_clear()
+            self.clipboard_append(str(terms))
 
     def _toggle(self) -> None:
         name = self._selected_name()

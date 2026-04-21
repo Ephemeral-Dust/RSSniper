@@ -1,6 +1,9 @@
 import tkinter as tk
+import webbrowser
 from tkinter import messagebox, ttk
 from typing import Callable
+
+from gui.utils import attach_context_menu
 
 
 class FeedsTab(ttk.Frame):
@@ -54,6 +57,20 @@ class FeedsTab(ttk.Frame):
         vsb.pack(side="right", fill="y")
 
         self._tree.bind("<Double-1>", lambda _e: self._preview())
+
+        attach_context_menu(
+            self._tree,
+            [
+                ("🔍 Preview Feed", self._preview),
+                ("✏️ Edit", self._edit),
+                (None, None),
+                ("🌐 Open Feed URL in Browser", self._ctx_open_url),
+                ("🔗 Copy URL", self._ctx_copy_url),
+                ("📋 Copy Name", self._ctx_copy_name),
+                (None, None),
+                ("🗑 Remove", self._remove),
+            ],
+        )
 
         ttk.Label(
             self,
@@ -130,6 +147,23 @@ class FeedsTab(ttk.Frame):
             f for f in config["feeds"] if f["name"] != feed_cfg["name"]
         ]
         self._save_config(config)
+
+    def _ctx_open_url(self) -> None:
+        feed_cfg = self._selected_feed_cfg()
+        if feed_cfg:
+            webbrowser.open(feed_cfg["url"])
+
+    def _ctx_copy_url(self) -> None:
+        feed_cfg = self._selected_feed_cfg()
+        if feed_cfg:
+            self.clipboard_clear()
+            self.clipboard_append(feed_cfg["url"])
+
+    def _ctx_copy_name(self) -> None:
+        feed_cfg = self._selected_feed_cfg()
+        if feed_cfg:
+            self.clipboard_clear()
+            self.clipboard_append(feed_cfg["name"])
 
     def _preview(self) -> None:
         from gui.dialogs import FeedPreviewDialog

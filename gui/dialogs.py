@@ -5,31 +5,34 @@ from html.parser import HTMLParser
 from tkinter import ttk
 from typing import Optional
 
-from gui.utils import fmt_dt
+from gui.utils import apply_dialog_icon, fmt_dt
 
 
 def _center_on_parent(dialog: tk.Toplevel, parent: tk.Widget) -> None:
     dialog.update_idletasks()
-    pw = (
-        parent.winfo_rootx()
-        + parent.winfo_width() // 2
-        - dialog.winfo_width() // 2
-    )
-    ph = (
-        parent.winfo_rooty()
-        + parent.winfo_height() // 2
-        - dialog.winfo_height() // 2
-    )
-    dialog.geometry(f"+{pw}+{ph}")
+    # For windows with an explicit geometry("WxH") call, winfo_reqwidth/height
+    # may return 1 because PanedWindow/Treeview have tiny natural sizes.
+    # Parse the stored geometry string as a reliable source of the real size.
+    geo = dialog.geometry()  # "WxH+X+Y"
+    wh = geo.split("+")[0].split("x")
+    geo_w, geo_h = int(wh[0]), int(wh[1])
+    dw = max(geo_w, dialog.winfo_reqwidth())
+    dh = max(geo_h, dialog.winfo_reqheight())
+    pw = parent.winfo_rootx() + parent.winfo_width() // 2 - dw // 2
+    ph = parent.winfo_rooty() + parent.winfo_height() // 2 - dh // 2
+    dialog.geometry(f"{dw}x{dh}+{pw}+{ph}")
+    dialog.deiconify()
 
 
 class AddFeedDialog(tk.Toplevel):
     def __init__(self, parent: tk.Widget, initial: dict | None = None) -> None:
         super().__init__(parent)
+        self.withdraw()
         self._initial = initial
         self.title("Edit Feed" if initial else "Add Feed")
         self.resizable(False, False)
         self.grab_set()
+        apply_dialog_icon(self)
         self.result: Optional[tuple[str, str, str]] = None
         self._build()
         _center_on_parent(self, parent)
@@ -97,10 +100,12 @@ class AddMonitorDialog(tk.Toplevel):
         initial: dict | None = None,
     ) -> None:
         super().__init__(parent)
+        self.withdraw()
         self._initial = initial
         self.title("Edit Monitor" if initial else "Add Monitor")
         self.resizable(False, False)
         self.grab_set()
+        apply_dialog_icon(self)
         self.result: Optional[
             tuple[str, list[str], Optional[float], list[str]]
         ] = None
@@ -419,10 +424,12 @@ class FeedPreviewDialog(tk.Toplevel):
         self, parent: tk.Widget, feed_cfg: dict, user_agent: str, conn=None
     ) -> None:
         super().__init__(parent)
+        self.withdraw()
         self.title(f"Preview — {feed_cfg['name']}")
         self.geometry(f"{self._WIDTH_LIST_ONLY}x560")
         self.minsize(500, 400)
         self.grab_set()
+        apply_dialog_icon(self)
         self._feed_cfg = feed_cfg
         self._user_agent = user_agent
         self._conn = conn
