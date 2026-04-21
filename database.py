@@ -57,6 +57,7 @@ def init_db(db_path: Path = DB_FILE) -> sqlite3.Connection:
     for _col_sql in [
         "ALTER TABLE deal_matches ADD COLUMN price REAL",
         "ALTER TABLE deal_matches ADD COLUMN published TEXT DEFAULT ''",
+        "ALTER TABLE deal_matches ADD COLUMN user_seen INTEGER DEFAULT 0",
     ]:
         try:
             conn.execute(_col_sql)
@@ -161,6 +162,17 @@ def mark_deal_matched(
     conn.commit()
 
 
+def set_deal_user_seen(
+    conn: sqlite3.Connection, item_id: str, seen: bool
+) -> None:
+    """Persist the user-visible New/Seen status for all monitor rows of an item."""
+    conn.execute(
+        "UPDATE deal_matches SET user_seen = ? WHERE item_id = ?",
+        (1 if seen else 0, item_id),
+    )
+    conn.commit()
+
+
 def sync_deal_matches_published(conn: sqlite3.Connection) -> None:
     """Copy published dates from seen_items into deal_matches where missing.
 
@@ -208,7 +220,8 @@ def get_recent_deal_matches(
             COALESCE(NULLIF(dm.published, ''), si.published, '') AS published,
             si.feed,
             si.title,
-            si.url
+            si.url,
+            dm.user_seen
         FROM deal_matches dm
         JOIN seen_items si ON si.id = dm.item_id
         WHERE dm.matched_at >= ?
@@ -226,6 +239,7 @@ def get_recent_deal_matches(
             "feed": r[5] or "",
             "title": r[6] or "",
             "url": r[7] or "",
+            "user_seen": bool(r[8]),
         }
         for r in rows
     ]

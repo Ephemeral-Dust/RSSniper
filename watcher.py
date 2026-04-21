@@ -27,6 +27,36 @@ _HTML_TAG_RE = re.compile(r"<[^>]+>")
 MAX_LOOKBACK_DAYS = 3  # default; overridden by config at runtime
 _MAX_ENTRIES_PER_FEED = 1000  # default; overridden by config at runtime
 
+# Named regex presets for match_pattern.  Each pattern's first capture group
+# is used as the text to match monitor terms against.  Exposed here so the GUI
+# can offer them as quick-fill options without duplicating the strings.
+PRESET_PATTERNS: dict[str, str] = {
+    "[H]/[W] boards (r/hardwareswap, r/mechmarket)": r"\[H\](.+?)(?=\[W\]|$)",
+    "Title only — ignore post body": r"^(.+)$",
+}
+
+
+def extract_match_text(entry: dict, feed_cfg: dict) -> str:
+    """Return the text to match monitor terms against for *entry*.
+
+    If the feed has a ``match_pattern`` field, the regex is applied to the
+    post title and the first capture group is returned.  Falls back to the
+    full ``title + summary`` text if the pattern is absent, invalid, or does
+    not match the title.
+    """
+    pattern = feed_cfg.get("match_pattern", "").strip()
+    if pattern:
+        try:
+            m = re.search(pattern, entry["title"], re.IGNORECASE)
+            if m:
+                return m.group(1) if m.lastindex else m.group(0)
+        except re.error:
+            log.warning(
+                f"[{feed_cfg.get('name', '?')}] invalid match_pattern "
+                f"{pattern!r} — falling back to full text"
+            )
+    return f"{entry['title']} {entry['summary']}"
+
 
 def strip_html(text: str) -> str:
     return _HTML_TAG_RE.sub(" ", text)
@@ -277,7 +307,7 @@ def check_feeds(
                 if not item_id or is_seen(conn, item_id):
                     continue
 
-                full_text = f"{entry['title']} {entry['summary']}"
+                full_text = extract_match_text(entry, feeds_by_name.get(feed_name, {}))
                 matched, price = matches_monitor(full_text, monitor)
 
                 if matched:

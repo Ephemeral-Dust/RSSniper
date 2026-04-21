@@ -652,3 +652,179 @@ class FeedPreviewDialog(tk.Toplevel):
 
     def _open_link(self, _event) -> None:
         self._open_selected()
+
+
+class DealPreviewDialog(tk.Toplevel):
+    """Show the body of a single deal post inline.
+
+    Accepts a *deal* dict with keys:
+      title, url, monitor, feed, price_str, discovered, published,
+      summary_html (optional — pre-fetched HTML body).
+
+    If *summary_html* is empty the dialog fetches the post's ``.rss``
+    URL on a background thread so the UI stays responsive.
+    """
+
+    def __init__(self, parent: tk.Widget, deal: dict, user_agent: str) -> None:
+        super().__init__(parent)
+        self.withdraw()
+        short_title = deal.get("title", "Deal")[:70]
+        self.title(f"Preview — {short_title}")
+        self.geometry("860x580")
+        self.minsize(500, 400)
+        self.resizable(True, True)
+        self.grab_set()
+        apply_dialog_icon(self)
+        self._deal = deal
+        self._user_agent = user_agent
+        self._build()
+        _center_on_parent(self, parent)
+        # Kick off content load after window is visible
+        self.after(80, self._load)
+
+    # ── Build ──────────────────────────────────────────────────────────────
+
+    def _build(self) -> None:
+        # Header bar
+        hdr = ttk.Frame(self)
+        hdr.pack(fill="x", padx=10, pady=(8, 0))
+
+        title_text = self._deal.get("title", "")
+        ttk.Label(
+            hdr,
+            text=title_text,
+            font=("TkDefaultFont", 10, "bold"),
+            wraplength=700,
+            justify="left",
+        ).pack(anchor="w")
+
+        # Meta row: monitor · feed · price · dates
+        meta_parts = []
+        if self._deal.get("monitor"):
+            meta_parts.append(f"Monitor: {self._deal['monitor']}")
+        if self._deal.get("feed"):
+            meta_parts.append(f"Feed: {self._deal['feed']}")
+        if self._deal.get("price_str"):
+            meta_parts.append(f"Price: {self._deal['price_str']}")
+        if self._deal.get("discovered"):
+            meta_parts.append(f"Found: {self._deal['discovered']}")
+        if self._deal.get("published"):
+            meta_parts.append(f"Published: {self._deal['published']}")
+
+        if meta_parts:
+            ttk.Label(
+                hdr,
+                text="  ·  ".join(meta_parts),
+                foreground="#888",
+                font=("TkDefaultFont", 8),
+            ).pack(anchor="w", pady=(2, 0))
+
+        # Clickable URL
+        url = self._deal.get("url", "")
+        if url:
+            link_lbl = ttk.Label(
+                hdr,
+                text=url,
+                foreground="#0066cc",
+                cursor="hand2",
+                font=("TkDefaultFont", 8),
+                wraplength=700,
+            )
+            link_lbl.pack(anchor="w", pady=(2, 0))
+            link_lbl.bind("<Button-1>", lambda _e: webbrowser.open(url))
+
+        ttk.Separator(self, orient="horizontal").pack(fill="x", padx=6, pady=6)
+
+        # Status label
+        self._status_var = tk.StringVar(value="Loading…")
+        ttk.Label(self, textvariable=self._status_var, foreground="#555").pack(
+            anchor="w", padx=10
+        )
+
+        # Body text area
+        body_frame = ttk.Frame(self)
+        body_frame.pack(fill="both", expand=True, padx=8, pady=(4, 0))
+
+        self._body_text = tk.Text(
+            body_frame,
+            wrap="word",
+            font=("TkDefaultFont", 9),
+            relief="flat",
+            state="disabled",
+            bg=self.cget("bg"),
+        )
+        vsb = ttk.Scrollbar(
+            body_frame, orient="vertical", command=self._body_text.yview
+        )
+        self._body_text.configure(yscrollcommand=vsb.set)
+        self._body_text.pack(side="left", fill="both", expand=True)
+        vsb.pack(side="right", fill="y")
+
+        self._html_renderer = HtmlRenderer(self._body_text)
+
+        # Toolbar
+        toolbar = ttk.Frame(self)
+        toolbar.pack(fill="x", padx=8, pady=(4, 8))
+        ttk.Button(toolbar, text="Close", command=self.destroy).pack(
+            side="right"
+        )
+        ttk.Button(
+            toolbar,
+            text="🌐 Open in Browser",
+            command=lambda: webbrowser.open(url) if url else None,
+        ).pack(side="right", padx=(0, 6))
+
+        self.bind("<Escape>", lambda _: self.destroy())
+
+    # ── Load ───────────────────────────────────────────────────────────────
+
+    def _load(self) -> None:
+        import threading
+
+        html = self._deal.get("summary_html", "")
+        if html:
+            self._html_renderer.render(html)
+            self._status_var.set("Loaded from cache.")
+            return
+
+        # Fetch in a background thread so the UI stays responsive
+        self._status_var.set("Fetching post content…")
+        self.config(cursor="wait")
+
+        def _fetch() -> None:
+            import requests
+            import feedparser
+
+            url = self._deal.get("url", "")
+            result_html = ""
+            try:
+                rss_url = url.rstrip("/") + ".rss"
+                resp = requests.get(
+                    rss_url,
+                    headers={"User-Agent": self._user_agent},
+                    timeout=15,
+                )
+                resp.raise_for_status()
+                parsed = feedparser.parse(resp.content)
+                if parsed.entries:
+                    raw = getattr(parsed.entries[0], "summary", "") or ""
+                    result_html = raw
+            except Exception as exc:
+                result_html = f"<p><em>Could not load preview: {exc}</em></p>"
+
+            # Schedule UI update back on the main thread
+            try:
+                self.after(0, lambda: self._on_loaded(result_html))
+            except tk.TclError:
+                pass  # dialog was closed before fetch finished
+
+        threading.Thread(target=_fetch, daemon=True).start()
+
+    def _on_loaded(self, html: str) -> None:
+        self._html_renderer.render(
+            html or "<p>(No body content available.)</p>"
+        )
+        self._status_var.set(
+            "Loaded — double-click links to open · close when done"
+        )
+        self.config(cursor="")

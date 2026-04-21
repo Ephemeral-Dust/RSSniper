@@ -21,7 +21,12 @@ except ImportError:
     _TRAY_AVAILABLE = False
 
 from config import load_config, save_config
-from database import DB_FILE, init_db, get_recent_deal_matches
+from database import (
+    DB_FILE,
+    init_db,
+    get_recent_deal_matches,
+    set_deal_user_seen,
+)
 from notifications import notify_desktop
 from paths import get_asset_dir
 from watcher import run_check, MAX_LOOKBACK_DAYS
@@ -250,7 +255,14 @@ class App(tk.Tk):
         notebook = ttk.Notebook(self)
         notebook.pack(fill="both", expand=True)
 
-        self._deals_tab = DealsTab(notebook, on_check_now=self._trigger_check)
+        self._deals_tab = DealsTab(
+            notebook,
+            on_check_now=self._trigger_check,
+            get_config=lambda: self._config,
+            on_mark_seen=lambda item_id, seen: set_deal_user_seen(
+                self._conn, item_id, seen
+            ),
+        )
         self._feeds_tab = FeedsTab(
             notebook,
             get_config=lambda: self._config,
@@ -373,13 +385,11 @@ class App(tk.Tk):
 
     # ── Check logic ────────────────────────────────────────────────────────────
 
-    def _load_historical_deals(
-        self, check_started_at: str | None = None
-    ) -> None:
+    def _load_historical_deals(self) -> None:
         """Populate the Deals tab from deal_matches already in the database.
 
-        Rows whose matched_at >= check_started_at are marked as New;
-        all others are marked Historical.
+        A deal is New if the user has not explicitly marked it as seen
+        (user_seen=0 / default); Seen otherwise.
         """
         from datetime import timedelta, timezone
         from datetime import datetime as _dt
@@ -395,10 +405,7 @@ class App(tk.Tk):
                 "link": row["url"],
                 "published": row["published"],
             }
-            is_new = (
-                check_started_at is not None
-                and row["matched_at"] >= check_started_at
-            )
+            is_new = not row.get("user_seen", False)
             self._deals_tab.add_deal(
                 row["monitor_name"],
                 row["feed"],
@@ -406,6 +413,7 @@ class App(tk.Tk):
                 price,
                 discovered_at=row["matched_at"],
                 is_new=is_new,
+                item_id=row["item_id"],
             )
         if matches:
             self._set_status(
@@ -424,13 +432,10 @@ class App(tk.Tk):
         ).start()
 
     def _do_check(self) -> None:
-        check_started_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
         try:
             run_check(self._config, self._conn, on_match=self._on_match)
         finally:
-            self._queue.put(
-                {"type": "check_end", "check_started_at": check_started_at}
-            )
+            self._queue.put({"type": "check_end"})
 
     def _on_match(
         self, *, monitor, feed_name, entry, price, notify=True
@@ -443,6 +448,7 @@ class App(tk.Tk):
                 "entry": entry,
                 "price": price,
                 "is_new": True,
+                "item_id": entry.get("id", entry.get("link", "")),
             }
         )
         notify_cfg = self._config.get("notifications", {})
@@ -467,6 +473,7 @@ class App(tk.Tk):
                         msg["entry"],
                         msg["price"],
                         is_new=msg.get("is_new", True),
+                        item_id=msg.get("item_id", ""),
                     )
                     title_short = msg["entry"]["title"][:60]
                     self._set_status(
@@ -481,9 +488,7 @@ class App(tk.Tk):
                     self._deals_tab.set_status(f"Last check: {ts}")
                     # Reload deals from DB so UI always reflects deal_matches
                     self._deals_tab.clear()
-                    self._load_historical_deals(
-                        check_started_at=msg.get("check_started_at")
-                    )
+                    self._load_historical_deals()
         except queue.Empty:
             pass
         self.after(100, self._poll_queue)

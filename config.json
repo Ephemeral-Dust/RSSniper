@@ -25,6 +25,11 @@
       "name": "r/hardwareswap",
       "url": "https://old.reddit.com/r/hardwareswap/.rss",
       "type": "reddit"
+    },
+    {
+      "name": "r/laptopdeals",
+      "url": "https://old.reddit.com/r/laptopdeals/.rss",
+      "type": "reddit"
     }
   ],
   "monitors": [
@@ -64,6 +69,16 @@
       "feeds": [
         "r/deals",
         "r/buildapcsales",
+        "r/hardwareswap"
+      ],
+      "enabled": true
+    },
+    {
+      "name": "Laptops",
+      "terms": [
+        "laptop"
+      ],
+      "feeds": [
         "r/hardwareswap"
       ],
       "enabled": true
