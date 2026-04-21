@@ -7,9 +7,17 @@ from gui.utils import attach_context_menu
 
 
 class FeedsTab(ttk.Frame):
-    _COLUMNS = ("name", "url", "type")
-    _HEADINGS = {"name": "Name", "url": "URL", "type": "Type"}
-    _WIDTHS = {"name": 160, "url": 520, "type": 80}
+    _COLUMNS = ("name", "url", "type", "pattern")
+    _HEADINGS = {
+        "name": "Name",
+        "url": "URL",
+        "type": "Type",
+        "pattern": "Match Pattern",
+    }
+    _WIDTHS = {"name": 150, "url": 380, "type": 70, "pattern": 200}
+    _NONE_LABEL = "Full text (default)"
+    _BUILTIN_SEP = "\u2500\u2500 Built-in presets \u2500\u2500"
+    _CUSTOM_SEP = "\u2500\u2500 My presets \u2500\u2500"
 
     def __init__(
         self,
@@ -22,6 +30,7 @@ class FeedsTab(ttk.Frame):
         self._get_config = get_config
         self._save_config = save_config
         self._get_conn = get_conn
+        self._pattern_popup: ttk.Combobox | None = None
         self._build()
         self.refresh()
 
@@ -57,6 +66,8 @@ class FeedsTab(ttk.Frame):
         vsb.pack(side="right", fill="y")
 
         self._tree.bind("<Double-1>", lambda _e: self._preview())
+        self._tree.bind("<ButtonRelease-1>", self._on_tree_click)
+        self._tree.bind("<Motion>", self._on_tree_motion)
 
         attach_context_menu(
             self._tree,
@@ -79,10 +90,26 @@ class FeedsTab(ttk.Frame):
         ).pack(pady=(0, 4))
 
     def refresh(self) -> None:
+        self._close_pattern_popup()
         self._tree.delete(*self._tree.get_children())
+        all_presets = self._all_presets_map()
+        # Reverse map: regex → preset name, for display lookup
+        preset_by_regex = {v: k for k, v in all_presets.items()}
         for f in self._get_config()["feeds"]:
+            raw = f.get("match_pattern", "")
+            if not raw:
+                display = "Full text (default)"
+            else:
+                display = preset_by_regex.get(raw, raw)
             self._tree.insert(
-                "", "end", values=(f["name"], f["url"], f.get("type", "rss"))
+                "",
+                "end",
+                values=(
+                    f["name"],
+                    f["url"],
+                    f.get("type", "rss"),
+                    f"{display} \u25be",
+                ),
             )
 
     def _selected_feed_cfg(self) -> dict | None:
@@ -90,21 +117,35 @@ class FeedsTab(ttk.Frame):
         if not sel:
             return None
         values = self._tree.item(sel)["values"]
+        name = values[0]
+        # Return the full config dict so all fields (incl. match_pattern) are available.
+        for f in self._get_config()["feeds"]:
+            if f["name"] == name:
+                return f
         return {"name": values[0], "url": values[1], "type": values[2]}
 
     def _add(self) -> None:
         from gui.dialogs import AddFeedDialog
 
-        dlg = AddFeedDialog(self)
+        dlg = AddFeedDialog(
+            self,
+            get_config=self._get_config,
+            save_config=self._save_config,
+        )
         self.wait_window(dlg)
         if not dlg.result:
             return
-        name, url, feed_type = dlg.result
+        name = dlg.result["name"]
+        url = dlg.result["url"]
+        feed_type = dlg.result["type"]
         config = self._get_config()
         if any(f["name"] == name for f in config["feeds"]):
             messagebox.showerror("Duplicate", f"Feed '{name}' already exists.")
             return
-        config["feeds"].append({"name": name, "url": url, "type": feed_type})
+        entry: dict = {"name": name, "url": url, "type": feed_type}
+        if dlg.result.get("match_pattern"):
+            entry["match_pattern"] = dlg.result["match_pattern"]
+        config["feeds"].append(entry)
         self._save_config(config)
 
     def _edit(self) -> None:
@@ -113,11 +154,19 @@ class FeedsTab(ttk.Frame):
         feed_cfg = self._selected_feed_cfg()
         if not feed_cfg:
             return
-        dlg = AddFeedDialog(self, initial=feed_cfg)
+        dlg = AddFeedDialog(
+            self,
+            initial=feed_cfg,
+            get_config=self._get_config,
+            save_config=self._save_config,
+        )
         self.wait_window(dlg)
         if not dlg.result:
             return
-        new_name, new_url, new_type = dlg.result
+        new_name = dlg.result["name"]
+        new_url = dlg.result["url"]
+        new_type = dlg.result["type"]
+        new_pattern = dlg.result.get("match_pattern", "")
         old_name = feed_cfg["name"]
         config = self._get_config()
         for f in config["feeds"]:
@@ -125,6 +174,10 @@ class FeedsTab(ttk.Frame):
                 f["name"] = new_name
                 f["url"] = new_url
                 f["type"] = new_type
+                if new_pattern:
+                    f["match_pattern"] = new_pattern
+                else:
+                    f.pop("match_pattern", None)
                 break
         if new_name != old_name:
             for m in config["monitors"]:
@@ -164,6 +217,119 @@ class FeedsTab(ttk.Frame):
         if feed_cfg:
             self.clipboard_clear()
             self.clipboard_append(feed_cfg["name"])
+
+    # ── Inline pattern popup ───────────────────────────────────────────────
+
+    def _build_preset_labels(self) -> list[str]:
+        from watcher import PRESET_PATTERNS
+
+        user = self._get_config().get("match_patterns", {})
+        labels = [self._BUILTIN_SEP, self._NONE_LABEL] + list(
+            PRESET_PATTERNS.keys()
+        )
+        if user:
+            labels += [self._CUSTOM_SEP] + list(user.keys())
+        return labels
+
+    def _all_presets_map(self) -> dict[str, str]:
+        from watcher import PRESET_PATTERNS
+
+        user = self._get_config().get("match_patterns", {})
+        return {**PRESET_PATTERNS, **user}
+
+    def _close_pattern_popup(self) -> None:
+        if self._pattern_popup is not None:
+            try:
+                self._pattern_popup.destroy()
+            except tk.TclError:
+                pass
+            self._pattern_popup = None
+
+    def _on_tree_motion(self, event) -> None:
+        col = self._tree.identify_column(event.x)
+        iid = self._tree.identify_row(event.y)
+        if col == "#4" and iid:
+            self._tree.config(cursor="hand2")
+        else:
+            self._tree.config(cursor="")
+
+    def _on_tree_click(self, event) -> None:
+        # If the click landed on the popup combobox itself (events bubble up
+        # from the placed child widget to the tree), let the combobox handle it.
+        if self._pattern_popup is not None:
+            widget = self._tree.winfo_containing(event.x_root, event.y_root)
+            if widget is self._pattern_popup:
+                return
+
+        col = self._tree.identify_column(event.x)
+        if col != "#4":  # not the pattern column
+            self._close_pattern_popup()
+            return
+        iid = self._tree.identify_row(event.y)
+        if not iid:
+            return
+        # Re-clicking a different cell while popup is open → close it
+        if self._pattern_popup is not None:
+            self._close_pattern_popup()
+            return
+        self._show_pattern_popup(iid)
+
+    def _show_pattern_popup(self, iid: str) -> None:
+        bbox = self._tree.bbox(iid, "pattern")
+        if not bbox:
+            return
+        x, y, w, h = bbox
+
+        values = self._tree.item(iid)["values"]
+        feed_name = values[0]
+        feed_cfg = next(
+            (f for f in self._get_config()["feeds"] if f["name"] == feed_name),
+            None,
+        )
+        if feed_cfg is None:
+            return
+
+        current_pattern = feed_cfg.get("match_pattern", "")
+        all_presets = self._all_presets_map()
+        current_label = self._NONE_LABEL
+        if current_pattern:
+            for label, regex in all_presets.items():
+                if regex == current_pattern:
+                    current_label = label
+                    break
+
+        popup = ttk.Combobox(
+            self._tree, values=self._build_preset_labels(), state="readonly"
+        )
+        popup.set(current_label)
+        # Let the combobox use its natural height so text isn't clipped;
+        # vertically center it within the cell row.
+        popup.update_idletasks()
+        natural_h = popup.winfo_reqheight()
+        pop_y = y + (h - natural_h) // 2
+        popup.place(x=x, y=pop_y, width=w)
+        popup.focus_set()
+        self._pattern_popup = popup
+
+        def _commit(event=None) -> None:
+            label = popup.get()
+            if label in (self._BUILTIN_SEP, self._CUSTOM_SEP):
+                return
+            pattern = all_presets.get(label, "")  # "" → Full text (default)
+            config = self._get_config()
+            for f in config["feeds"]:
+                if f["name"] == feed_name:
+                    if pattern:
+                        f["match_pattern"] = pattern
+                    else:
+                        f.pop("match_pattern", None)
+                    break
+            self._save_config(config)
+            self._close_pattern_popup()
+            self.refresh()
+
+        popup.bind("<<ComboboxSelected>>", _commit)
+        popup.bind("<Escape>", lambda _e: self._close_pattern_popup())
 
     def _preview(self) -> None:
         from gui.dialogs import FeedPreviewDialog

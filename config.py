@@ -60,6 +60,8 @@ DEFAULT_CONFIG: dict = {
     },
     "user_agent": "RedditDealWatcher/1.0 (personal use)",
     "theme": "dark",
+    # ── User-defined regex presets (name → regex) ──────────────────────────────
+    "match_patterns": {},
 }
 
 

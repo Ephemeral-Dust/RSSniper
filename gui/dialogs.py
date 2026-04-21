@@ -2,8 +2,8 @@ import re
 import tkinter as tk
 import webbrowser
 from html.parser import HTMLParser
-from tkinter import ttk
-from typing import Optional
+from tkinter import messagebox, ttk
+from typing import Callable, Optional
 
 from gui.utils import apply_dialog_icon, fmt_dt
 
@@ -25,17 +25,47 @@ def _center_on_parent(dialog: tk.Toplevel, parent: tk.Widget) -> None:
 
 
 class AddFeedDialog(tk.Toplevel):
-    def __init__(self, parent: tk.Widget, initial: dict | None = None) -> None:
+    _NONE_LABEL = "Full text (default)"
+    _BUILTIN_SEP = "\u2500\u2500 Built-in presets \u2500\u2500"
+    _CUSTOM_SEP = "\u2500\u2500 My presets \u2500\u2500"
+
+    def __init__(
+        self,
+        parent: tk.Widget,
+        initial: dict | None = None,
+        get_config: Callable = None,
+        save_config: Callable = None,
+    ) -> None:
         super().__init__(parent)
         self.withdraw()
         self._initial = initial
+        self._get_config = get_config or (lambda: {})
+        self._save_config = save_config or (lambda _c: None)
         self.title("Edit Feed" if initial else "Add Feed")
         self.resizable(False, False)
         self.grab_set()
         apply_dialog_icon(self)
-        self.result: Optional[tuple[str, str, str]] = None
+        self.result: dict | None = None
         self._build()
         _center_on_parent(self, parent)
+
+    def _all_presets(self) -> dict[str, str]:
+        """Built-in presets merged with user-saved presets (user wins on name clash)."""
+        from watcher import PRESET_PATTERNS
+
+        user = self._get_config().get("match_patterns", {})
+        return {**PRESET_PATTERNS, **user}
+
+    def _refresh_preset_values(self) -> None:
+        from watcher import PRESET_PATTERNS
+
+        user = self._get_config().get("match_patterns", {})
+        labels = [self._BUILTIN_SEP, self._NONE_LABEL] + list(
+            PRESET_PATTERNS.keys()
+        )
+        if user:
+            labels += [self._CUSTOM_SEP] + list(user.keys())
+        self._preset.config(values=labels)
 
     def _build(self) -> None:
         f = ttk.Frame(self, padding=14)
@@ -64,8 +94,67 @@ class AddFeedDialog(tk.Toplevel):
         sep = ttk.Separator(f, orient="horizontal")
         sep.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(10, 0))
 
+        # ── Match pattern ──────────────────────────────────────────────
+        ttk.Label(f, text="Match\nPattern:").grid(
+            row=4, column=0, sticky="nw", pady=4
+        )
+        pat_frame = ttk.Frame(f)
+        pat_frame.grid(
+            row=4, column=1, columnspan=2, sticky="ew", pady=4, padx=(8, 0)
+        )
+        self._preset = ttk.Combobox(
+            pat_frame, values=[], state="readonly", width=44
+        )
+        self._refresh_preset_values()
+        self._preset.set(self._NONE_LABEL)
+        self._preset.pack(fill="x", pady=(0, 3))
+        self._preset.bind("<<ComboboxSelected>>", self._on_preset_change)
+
+        entry_row = ttk.Frame(pat_frame)
+        entry_row.pack(fill="x", pady=(0, 2))
+        self._pattern = ttk.Entry(entry_row, width=40)
+        self._pattern.pack(side="left", fill="x", expand=True)
+        ttk.Button(
+            entry_row,
+            text="\U0001f4be Save as Preset",
+            command=self._on_save_preset,
+        ).pack(side="left", padx=(4, 0))
+        self._del_preset_btn = ttk.Button(
+            entry_row,
+            text="\U0001f5d1 Delete Preset",
+            command=self._on_delete_preset,
+            state="disabled",
+        )
+        self._del_preset_btn.pack(side="left", padx=(4, 0))
+
+        help_frame = ttk.LabelFrame(
+            pat_frame, text=" How it works ", padding=(8, 4)
+        )
+        help_frame.pack(fill="x", pady=(6, 0))
+        help_text = (
+            "\u2022 Leave blank \u2192 the full post title + body is searched.\n"
+            "\u2022 Enter a regex \u2192 only the text captured by group\xa01 ( \u2026 ) is searched.\n"
+            "  Useful when posts have a structured format, e.g. [H]\xa0have\xa0[W]\xa0want \u2014\n"
+            "  set the pattern so group\xa01 captures only the [H] section.\n"
+            "\u2022 Matching is case-insensitive. Monitor terms are plain keywords\n"
+            "  (no regex) checked as substrings of whatever text is extracted.\n"
+            "\u2022 Example: \\[H\\](.+?)(?=\\[W\\]|$) extracts everything after [H]\n"
+            "  and before [W], so only items for sale are matched."
+        )
+        ttk.Label(
+            help_frame,
+            text=help_text,
+            foreground="#888",
+            font=("TkDefaultFont", 8),
+            justify="left",
+            wraplength=380,
+        ).pack(anchor="w")
+
+        sep2 = ttk.Separator(f, orient="horizontal")
+        sep2.grid(row=5, column=0, columnspan=3, sticky="ew", pady=(10, 0))
+
         btn_frame = ttk.Frame(f)
-        btn_frame.grid(row=4, column=0, columnspan=3, pady=(10, 0), sticky="e")
+        btn_frame.grid(row=6, column=0, columnspan=3, pady=(10, 0), sticky="e")
         ttk.Button(btn_frame, text="Cancel", command=self.destroy).pack(
             side="right"
         )
@@ -79,16 +168,89 @@ class AddFeedDialog(tk.Toplevel):
             self._name.insert(0, self._initial.get("name", ""))
             self._url.insert(0, self._initial.get("url", ""))
             self._type.set(self._initial.get("type", "reddit"))
+            stored_pattern = self._initial.get("match_pattern", "")
+            if stored_pattern:
+                self._pattern.insert(0, stored_pattern)
+                for label, regex in self._all_presets().items():
+                    if regex == stored_pattern:
+                        self._preset.set(label)
+                        break
         self._name.focus_set()
         self.bind("<Return>", lambda _: self._submit())
         self.bind("<Escape>", lambda _: self.destroy())
+
+    def _on_preset_change(self, _event=None) -> None:
+        label = self._preset.get()
+        if label in (self._BUILTIN_SEP, self._CUSTOM_SEP):
+            self._preset.set(self._NONE_LABEL)
+            self._pattern.delete(0, "end")
+            self._del_preset_btn.config(state="disabled")
+            return
+        pattern = self._all_presets().get(label, "")
+        self._pattern.delete(0, "end")
+        if pattern:
+            self._pattern.insert(0, pattern)
+        user_presets = self._get_config().get("match_patterns", {})
+        self._del_preset_btn.config(
+            state="normal" if label in user_presets else "disabled"
+        )
+
+    def _on_delete_preset(self) -> None:
+        label = self._preset.get()
+        config = self._get_config()
+        user_presets = config.get("match_patterns", {})
+        if label not in user_presets:
+            return
+        if not messagebox.askyesno(
+            "Delete Preset", f'Delete preset "{label}"?', parent=self
+        ):
+            return
+        del user_presets[label]
+        self._save_config(config)
+        self._refresh_preset_values()
+        self._preset.set(self._NONE_LABEL)
+        self._pattern.delete(0, "end")
+        self._del_preset_btn.config(state="disabled")
+
+    def _on_save_preset(self) -> None:
+        from tkinter.simpledialog import askstring
+
+        pattern = self._pattern.get().strip()
+        if not pattern:
+            messagebox.showwarning(
+                "Save Preset", "Enter a pattern first.", parent=self
+            )
+            return
+        name = askstring("Save Preset", "Preset name:", parent=self)
+        if not name or not name.strip():
+            return
+        name = name.strip()
+        from watcher import PRESET_PATTERNS
+
+        if name in PRESET_PATTERNS:
+            messagebox.showerror(
+                "Save Preset",
+                f'"{name}" is a built-in preset name and cannot be overwritten.',
+                parent=self,
+            )
+            return
+        config = self._get_config()
+        config.setdefault("match_patterns", {})[name] = pattern
+        self._save_config(config)
+        self._refresh_preset_values()
+        self._preset.set(name)
 
     def _submit(self) -> None:
         name = self._name.get().strip()
         url = self._url.get().strip()
         if not name or not url:
             return
-        self.result = (name, url, self._type.get())
+        self.result = {
+            "name": name,
+            "url": url,
+            "type": self._type.get(),
+            "match_pattern": self._pattern.get().strip(),
+        }
         self.destroy()
 
 
@@ -129,21 +291,29 @@ class AddMonitorDialog(tk.Toplevel):
         ttk.Label(
             f, text='e.g. "RTX 4080, RX 7900 XT"', foreground="#888"
         ).grid(row=2, column=1, sticky="w", padx=(8, 0))
+        ttk.Label(
+            f,
+            text="Each term is a plain keyword. A post matches if any one term\n"
+            "appears anywhere in the searched text (case-insensitive).",
+            foreground="#888",
+            font=("TkDefaultFont", 8),
+            justify="left",
+        ).grid(row=3, column=1, sticky="w", padx=(8, 0), pady=(0, 4))
 
         ttk.Label(f, text="Max Price ($):").grid(
-            row=3, column=0, sticky="w", pady=4
+            row=4, column=0, sticky="w", pady=4
         )
         price_row = ttk.Frame(f)
-        price_row.grid(row=3, column=1, sticky="w", pady=4, padx=(8, 0))
+        price_row.grid(row=4, column=1, sticky="w", pady=4, padx=(8, 0))
         self._price = ttk.Entry(price_row, width=10)
         self._price.pack(side="left")
         ttk.Label(
             price_row, text="  (leave empty = any price)", foreground="#888"
         ).pack(side="left")
 
-        ttk.Label(f, text="Feeds:").grid(row=4, column=0, sticky="nw", pady=6)
+        ttk.Label(f, text="Feeds:").grid(row=5, column=0, sticky="nw", pady=6)
         feed_frame = ttk.LabelFrame(f, text="  apply to  ", padding=6)
-        feed_frame.grid(row=4, column=1, sticky="ew", pady=4, padx=(8, 0))
+        feed_frame.grid(row=5, column=1, sticky="ew", pady=4, padx=(8, 0))
         self._feed_vars: dict[str, tk.BooleanVar] = {}
         for name in self._feed_names:
             var = tk.BooleanVar(value=True)
@@ -157,10 +327,10 @@ class AddMonitorDialog(tk.Toplevel):
             ).pack()
 
         sep = ttk.Separator(f, orient="horizontal")
-        sep.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+        sep.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(10, 0))
 
         btn_frame = ttk.Frame(f)
-        btn_frame.grid(row=6, column=0, columnspan=2, pady=(10, 0), sticky="e")
+        btn_frame.grid(row=7, column=0, columnspan=2, pady=(10, 0), sticky="e")
         ttk.Button(btn_frame, text="Cancel", command=self.destroy).pack(
             side="right"
         )

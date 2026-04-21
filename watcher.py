@@ -307,7 +307,9 @@ def check_feeds(
                 if not item_id or is_seen(conn, item_id):
                     continue
 
-                full_text = extract_match_text(entry, feeds_by_name.get(feed_name, {}))
+                full_text = extract_match_text(
+                    entry, feeds_by_name.get(feed_name, {})
+                )
                 matched, price = matches_monitor(full_text, monitor)
 
                 if matched:
