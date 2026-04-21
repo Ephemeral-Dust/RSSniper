@@ -17,6 +17,8 @@ from database import (
     get_seen_items_since,
     get_recent_deal_matches,
     sync_deal_matches_published,
+    delete_deal_match,
+    get_seen_items_for_feed,
 )
 
 log = logging.getLogger("watcher")
@@ -40,9 +42,13 @@ def extract_match_text(entry: dict, feed_cfg: dict) -> str:
     """Return the text to match monitor terms against for *entry*.
 
     If the feed has a ``match_pattern`` field, the regex is applied to the
-    post title and the first capture group is returned.  Falls back to the
-    full ``title + summary`` text if the pattern is absent, invalid, or does
-    not match the title.
+    post title.  The first capture group (or the full match if no groups) is
+    returned.  If the pattern is present but does NOT match the title, an
+    empty string is returned so the entry is excluded from matching — the
+    pattern acts as a filter, not just an extractor.
+
+    Falls back to ``title + summary`` only when no pattern is configured, or
+    when the pattern is invalid (regex error).
     """
     pattern = feed_cfg.get("match_pattern", "").strip()
     if pattern:
@@ -50,6 +56,8 @@ def extract_match_text(entry: dict, feed_cfg: dict) -> str:
             m = re.search(pattern, entry["title"], re.IGNORECASE)
             if m:
                 return m.group(1) if m.lastindex else m.group(0)
+            # Pattern set but title didn't match → exclude this entry.
+            return ""
         except re.error:
             log.warning(
                 f"[{feed_cfg.get('name', '?')}] invalid match_pattern "
@@ -386,7 +394,11 @@ def scan_seen_for_deals(
             if not item_id or is_deal_matched(conn, item_id, monitor["name"]):
                 continue
 
-            matched, price = matches_monitor(item["title"], monitor)
+            feed_cfg = feeds_by_name.get(item["feed"], {})
+            match_text = extract_match_text(
+                {"title": item["title"], "summary": ""}, feed_cfg
+            )
+            matched, price = matches_monitor(match_text, monitor)
             if matched:
                 log.info(
                     f"  DB-MATCH [{monitor['name']}] {item['title'][:80]}"
@@ -422,6 +434,75 @@ def scan_seen_for_deals(
         )
     else:
         log.info("DB scan complete — no new historical matches.")
+
+
+def reeval_feed_pattern(config: dict, conn, feed_name: str) -> tuple[int, int]:
+    """Re-evaluate all stored seen_items for *feed_name* against active monitors.
+
+    Uses the feed's current ``match_pattern`` from *config*.  Removes
+    deal_matches that no longer match under the new pattern and adds any that
+    now match for the first time.  Returns ``(removed, added)`` counts.
+
+    Note: only the stored ``title`` field is available for DB items; the post
+    body is not stored.  For a pattern that relies on the body the results may
+    differ from a live fetch, but title-based re-evaluation is accurate for the
+    common structured-title patterns (e.g. [H]/[W] boards).
+    """
+    feeds_by_name = {f["name"]: f for f in config["feeds"]}
+    feed_cfg = feeds_by_name.get(feed_name)
+    if feed_cfg is None:
+        return 0, 0
+
+    items = get_seen_items_for_feed(conn, feed_name)
+    if not items:
+        return 0, 0
+
+    removed = 0
+    added = 0
+
+    for monitor in config["monitors"]:
+        if not monitor.get("enabled", True):
+            continue
+        target_feeds: set[str] = set(
+            monitor.get("feeds", list(feeds_by_name.keys()))
+        )
+        if feed_name not in target_feeds:
+            continue
+
+        for item in items:
+            item_id = item["id"]
+            if not item_id:
+                continue
+
+            # Use title only (body not stored in DB); summary set to "" so
+            # full-text fallback is title-only, not title + empty string noise.
+            entry = {"title": item["title"], "summary": ""}
+            match_text = extract_match_text(entry, feed_cfg)
+            matched, price = matches_monitor(match_text, monitor)
+            was_matched = is_deal_matched(conn, item_id, monitor["name"])
+
+            if was_matched and not matched:
+                delete_deal_match(conn, item_id, monitor["name"])
+                log.info(f"  REMOVED [{monitor['name']}] {item['title'][:80]}")
+                removed += 1
+            elif matched and not was_matched:
+                mark_deal_matched(
+                    conn,
+                    item_id,
+                    monitor["name"],
+                    price=price,
+                    published=item.get("published", ""),
+                )
+                log.info(f"  ADDED   [{monitor['name']}] {item['title'][:80]}")
+                added += 1
+
+    if removed or added:
+        log.info(
+            f"[{feed_name}] pattern re-eval: {removed} removed, {added} added."
+        )
+    else:
+        log.info(f"[{feed_name}] pattern re-eval: no deal changes.")
+    return removed, added
 
 
 def run_check(config: dict, conn, on_match: Optional[Callable] = None) -> None:

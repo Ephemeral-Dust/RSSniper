@@ -25,11 +25,17 @@ class FeedsTab(ttk.Frame):
         get_config: Callable,
         save_config: Callable,
         get_conn: Callable = None,
+        on_feed_pattern_change: Callable = None,
+        on_check_now: Callable = None,
+        on_minimize: Callable = None,
     ) -> None:
         super().__init__(parent)
         self._get_config = get_config
         self._save_config = save_config
         self._get_conn = get_conn
+        self._on_feed_pattern_change = on_feed_pattern_change
+        self._on_check_now = on_check_now or (lambda: None)
+        self._on_minimize = on_minimize or (lambda: None)
         self._pattern_popup: ttk.Combobox | None = None
         self._build()
         self.refresh()
@@ -47,6 +53,12 @@ class FeedsTab(ttk.Frame):
         ttk.Button(toolbar, text="Preview Feed", command=self._preview).pack(
             side="left", padx=(4, 0)
         )
+        ttk.Button(toolbar, text="⬇ Tray", command=self._on_minimize).pack(
+            side="right"
+        )
+        ttk.Button(
+            toolbar, text="⚡ Check Now", command=self._on_check_now
+        ).pack(side="right", padx=(0, 4))
 
         frame = ttk.Frame(self)
         frame.pack(fill="both", expand=True, padx=6, pady=6)
@@ -167,8 +179,18 @@ class FeedsTab(ttk.Frame):
         new_url = dlg.result["url"]
         new_type = dlg.result["type"]
         new_pattern = dlg.result.get("match_pattern", "")
+        old_pattern = feed_cfg.get("match_pattern", "")
         old_name = feed_cfg["name"]
         config = self._get_config()
+        # Guard: if the name changed, make sure the new name isn't already taken.
+        if new_name != old_name and any(
+            f["name"] == new_name for f in config["feeds"]
+        ):
+            messagebox.showerror(
+                "Duplicate Name",
+                f"A feed named \u201c{new_name}\u201d already exists.",
+            )
+            return
         for f in config["feeds"]:
             if f["name"] == old_name:
                 f["name"] = new_name
@@ -186,19 +208,33 @@ class FeedsTab(ttk.Frame):
                     for fn in m.get("feeds", [])
                 ]
         self._save_config(config)
+        if new_pattern != old_pattern and self._on_feed_pattern_change:
+            self._on_feed_pattern_change(new_name)
 
     def _remove(self) -> None:
         feed_cfg = self._selected_feed_cfg()
         if not feed_cfg:
             return
         if not messagebox.askyesno(
-            "Remove Feed", f"Remove '{feed_cfg['name']}'?"
+            "Remove Feed", f"Remove \u2018{feed_cfg['name']}\u2019?"
         ):
             return
         config = self._get_config()
-        config["feeds"] = [
-            f for f in config["feeds"] if f["name"] != feed_cfg["name"]
-        ]
+        old_name = feed_cfg["name"]
+        old_url = feed_cfg.get("url", "")
+        # Match by both name AND url so a duplicate-named feed doesn't also get removed.
+        removed = False
+        new_feeds = []
+        for f in config["feeds"]:
+            if (
+                not removed
+                and f["name"] == old_name
+                and f.get("url", "") == old_url
+            ):
+                removed = True  # skip exactly one entry
+            else:
+                new_feeds.append(f)
+        config["feeds"] = new_feeds
         self._save_config(config)
 
     def _ctx_open_url(self) -> None:
@@ -327,6 +363,8 @@ class FeedsTab(ttk.Frame):
             self._save_config(config)
             self._close_pattern_popup()
             self.refresh()
+            if pattern != current_pattern and self._on_feed_pattern_change:
+                self._on_feed_pattern_change(feed_name)
 
         popup.bind("<<ComboboxSelected>>", _commit)
         popup.bind("<Escape>", lambda _e: self._close_pattern_popup())

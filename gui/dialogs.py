@@ -998,3 +998,427 @@ class DealPreviewDialog(tk.Toplevel):
             "Loaded — double-click links to open · close when done"
         )
         self.config(cursor="")
+
+
+# ── Import / Export ───────────────────────────────────────────────────────────
+
+
+class _ConflictDialog(tk.Toplevel):
+    """Prompt the user when an imported item name clashes with an existing one.
+
+    ``existing`` and ``incoming`` are lists of ``(field_label, value)`` tuples
+    that describe the two versions.  Rows where values differ are highlighted.
+    """
+
+    OVERWRITE = "overwrite"
+    SKIP = "skip"
+    SKIP_ALL = "skip_all"
+    CANCEL = "cancel"
+
+    def __init__(
+        self,
+        parent: tk.Widget,
+        kind: str,
+        name: str,
+        existing: list[tuple[str, str]],
+        incoming: list[tuple[str, str]],
+    ) -> None:
+        super().__init__(parent)
+        self.withdraw()
+        self.title("Import Conflict")
+        self.resizable(True, False)
+        self.grab_set()
+        apply_dialog_icon(self)
+        self.result = self.CANCEL
+        self._build(kind, name, existing, incoming)
+        _center_on_parent(self, parent)
+
+    def _build(
+        self,
+        kind: str,
+        name: str,
+        existing: list[tuple[str, str]],
+        incoming: list[tuple[str, str]],
+    ) -> None:
+        f = ttk.Frame(self, padding=16)
+        f.pack(fill="both", expand=True)
+
+        ttk.Label(
+            f,
+            text=f"Conflict: {kind.capitalize()} \u201c{name}\u201d already exists.",
+            font=("TkDefaultFont", 10, "bold"),
+        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
+
+        # Side-by-side comparison frames
+        existing_map = dict(existing)
+        incoming_map = dict(incoming)
+        all_keys = list(
+            dict.fromkeys([k for k, _ in existing] + [k for k, _ in incoming])
+        )
+
+        lf_exist = ttk.LabelFrame(f, text=" Existing ", padding=(8, 4))
+        lf_exist.grid(row=1, column=0, sticky="nsew", padx=(0, 6))
+        lf_new = ttk.LabelFrame(f, text=" Incoming ", padding=(8, 4))
+        lf_new.grid(row=1, column=1, sticky="nsew")
+
+        for row_idx, key in enumerate(all_keys):
+            ev = existing_map.get(key, "—")
+            iv = incoming_map.get(key, "—")
+            changed = ev != iv
+            diff_fg = "#e08030" if changed else ""
+
+            ttk.Label(lf_exist, text=f"{key}:", foreground="#888").grid(
+                row=row_idx, column=0, sticky="w", padx=(0, 6), pady=1
+            )
+            ttk.Label(
+                lf_exist,
+                text=ev,
+                foreground=diff_fg,
+                wraplength=240,
+                justify="left",
+            ).grid(row=row_idx, column=1, sticky="w", pady=1)
+
+            ttk.Label(lf_new, text=f"{key}:", foreground="#888").grid(
+                row=row_idx, column=0, sticky="w", padx=(0, 6), pady=1
+            )
+            ttk.Label(
+                lf_new,
+                text=iv,
+                foreground=diff_fg,
+                wraplength=240,
+                justify="left",
+            ).grid(row=row_idx, column=1, sticky="w", pady=1)
+
+        ttk.Separator(f, orient="horizontal").grid(
+            row=2, column=0, columnspan=2, sticky="ew", pady=(12, 0)
+        )
+
+        def _set(val: str) -> None:
+            self.result = val
+            self.destroy()
+
+        btn_row = ttk.Frame(f)
+        btn_row.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+        ttk.Button(
+            btn_row, text="Overwrite", command=lambda: _set(self.OVERWRITE)
+        ).pack(side="left", padx=(0, 4))
+        ttk.Button(btn_row, text="Skip", command=lambda: _set(self.SKIP)).pack(
+            side="left", padx=(0, 4)
+        )
+        ttk.Button(
+            btn_row, text="Skip All", command=lambda: _set(self.SKIP_ALL)
+        ).pack(side="left", padx=(0, 4))
+        ttk.Button(
+            btn_row, text="Cancel Import", command=lambda: _set(self.CANCEL)
+        ).pack(side="right")
+
+        f.columnconfigure(0, weight=1)
+        f.columnconfigure(1, weight=1)
+        self.bind("<Escape>", lambda _: _set(self.CANCEL))
+
+
+class ExportDialog(tk.Toplevel):
+    """Select which sections to export and write them to a JSON file."""
+
+    def __init__(self, parent: tk.Widget, config: dict) -> None:
+        super().__init__(parent)
+        self.withdraw()
+        self.title("Export Configuration")
+        self.resizable(False, False)
+        self.grab_set()
+        apply_dialog_icon(self)
+        self._config = config
+        self._build()
+        _center_on_parent(self, parent)
+
+    def _build(self) -> None:
+        f = ttk.Frame(self, padding=14)
+        f.pack(fill="both", expand=True)
+
+        ttk.Label(f, text="Select what to export:").grid(
+            row=0, column=0, columnspan=2, sticky="w", pady=(0, 8)
+        )
+
+        feeds_n = len(self._config.get("feeds", []))
+        monitors_n = len(self._config.get("monitors", []))
+        presets_n = len(self._config.get("match_patterns", {}))
+
+        self._feeds_var = tk.BooleanVar(value=bool(feeds_n))
+        self._monitors_var = tk.BooleanVar(value=bool(monitors_n))
+        self._presets_var = tk.BooleanVar(value=bool(presets_n))
+
+        ttk.Checkbutton(
+            f,
+            text=f"Feeds  ({feeds_n})",
+            variable=self._feeds_var,
+            state="normal" if feeds_n else "disabled",
+        ).grid(row=1, column=0, sticky="w", pady=2)
+        ttk.Checkbutton(
+            f,
+            text=f"Monitors  ({monitors_n})",
+            variable=self._monitors_var,
+            state="normal" if monitors_n else "disabled",
+        ).grid(row=2, column=0, sticky="w", pady=2)
+        ttk.Checkbutton(
+            f,
+            text=f"Regex Presets  ({presets_n})",
+            variable=self._presets_var,
+            state="normal" if presets_n else "disabled",
+        ).grid(row=3, column=0, sticky="w", pady=2)
+
+        ttk.Separator(f, orient="horizontal").grid(
+            row=4, column=0, sticky="ew", pady=(12, 0)
+        )
+
+        btn_frame = ttk.Frame(f)
+        btn_frame.grid(row=5, column=0, pady=(10, 0), sticky="e")
+        ttk.Button(btn_frame, text="Cancel", command=self.destroy).pack(
+            side="right"
+        )
+        ttk.Button(
+            btn_frame, text="Export\u2026", command=self._do_export
+        ).pack(side="right", padx=(0, 6))
+
+        f.columnconfigure(0, weight=1)
+        self.bind("<Escape>", lambda _: self.destroy())
+
+    def _do_export(self) -> None:
+        import json
+        from tkinter.filedialog import asksaveasfilename
+
+        data: dict = {}
+        if self._feeds_var.get():
+            data["feeds"] = self._config.get("feeds", [])
+        if self._monitors_var.get():
+            data["monitors"] = self._config.get("monitors", [])
+        if self._presets_var.get():
+            mp = self._config.get("match_patterns", {})
+            if mp:
+                data["match_patterns"] = mp
+
+        if not data:
+            messagebox.showwarning(
+                "Export", "Select at least one section to export.", parent=self
+            )
+            return
+
+        path = asksaveasfilename(
+            parent=self,
+            title="Export Configuration",
+            defaultextension=".json",
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+            initialfile="rdw_config.json",
+        )
+        if not path:
+            return
+
+        try:
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(data, fh, indent=2)
+            messagebox.showinfo(
+                "Export Complete",
+                f"Exported successfully to:\n{path}",
+                parent=self,
+            )
+            self.destroy()
+        except OSError as exc:
+            messagebox.showerror("Export Failed", str(exc), parent=self)
+
+
+def run_import(
+    parent: tk.Widget, get_config: Callable, save_config: Callable
+) -> bool:
+    """Open a file dialog, parse a JSON export, and merge into the live config.
+
+    Conflicts (same name already exists) prompt the user with
+    Overwrite / Skip / Skip All / Cancel Import.  If the user cancels at any
+    point, nothing is saved.  Returns True if the config was changed and saved.
+    """
+    import copy
+    import json
+    from tkinter.filedialog import askopenfilename
+
+    path = askopenfilename(
+        parent=parent,
+        title="Import Configuration",
+        filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+    )
+    if not path:
+        return False
+
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, json.JSONDecodeError) as exc:
+        messagebox.showerror(
+            "Import Failed", f"Could not read file:\n{exc}", parent=parent
+        )
+        return False
+
+    if not isinstance(data, dict):
+        messagebox.showerror(
+            "Import Failed",
+            "Invalid format — expected a JSON object.",
+            parent=parent,
+        )
+        return False
+
+    # Work on a deep copy so the original is never mutated unless we save.
+    config = copy.deepcopy(get_config())
+    stats: dict[str, int] = {"feeds": 0, "monitors": 0, "presets": 0}
+
+    from watcher import PRESET_PATTERNS
+
+    all_builtin_presets = dict(PRESET_PATTERNS)
+    # We don't have user presets at this point yet, build reverse map later per item.
+
+    def _preset_label(pattern: str, user_presets: dict) -> str:
+        """Resolve a raw regex to its preset name, or return the raw pattern."""
+        if not pattern:
+            return "Full text (default)"
+        merged = {**all_builtin_presets, **user_presets}
+        for label, regex in merged.items():
+            if regex == pattern:
+                return label
+        return pattern
+
+    def _feed_fields(feed: dict) -> list[tuple[str, str]]:
+        user_presets = config.get("match_patterns", {})
+        raw_pattern = feed.get("match_pattern", "")
+        return [
+            ("URL", feed.get("url", "—")),
+            ("Type", feed.get("type", "rss")),
+            ("Pattern", _preset_label(raw_pattern, user_presets)),
+        ]
+
+    def _monitor_fields(monitor: dict) -> list[tuple[str, str]]:
+        terms = ", ".join(monitor.get("terms", [])) or "(any)"
+        price = monitor.get("max_price")
+        price_str = f"${price:.2f}" if price is not None else "any"
+        feeds_str = ", ".join(monitor.get("feeds", [])) or "(all feeds)"
+        enabled = "Yes" if monitor.get("enabled", True) else "No"
+        return [
+            ("Terms", terms),
+            ("Max Price", price_str),
+            ("Feeds", feeds_str),
+            ("Enabled", enabled),
+        ]
+
+    def _preset_fields(pattern: str) -> list[tuple[str, str]]:
+        return [("Regex", pattern or "(empty)")]
+
+    # ── Feeds ─────────────────────────────────────────────────────────────
+    skip_all = False
+    for feed in data.get("feeds", []):
+        name = feed.get("name", "").strip()
+        if not name:
+            continue
+        existing_cfg = next(
+            (f for f in config.get("feeds", []) if f["name"] == name), None
+        )
+        if existing_cfg is not None:
+            if skip_all:
+                continue
+            dlg = _ConflictDialog(
+                parent,
+                "feed",
+                name,
+                existing=_feed_fields(existing_cfg),
+                incoming=_feed_fields(feed),
+            )
+            parent.wait_window(dlg)
+            if dlg.result == _ConflictDialog.CANCEL:
+                return False
+            if dlg.result == _ConflictDialog.SKIP:
+                continue
+            if dlg.result == _ConflictDialog.SKIP_ALL:
+                skip_all = True
+                continue
+            # OVERWRITE: remove old entry first
+            config["feeds"] = [f for f in config["feeds"] if f["name"] != name]
+        config.setdefault("feeds", []).append(feed)
+        stats["feeds"] += 1
+
+    # ── Monitors ──────────────────────────────────────────────────────────
+    skip_all = False
+    for monitor in data.get("monitors", []):
+        name = monitor.get("name", "").strip()
+        if not name:
+            continue
+        existing_cfg = next(
+            (m for m in config.get("monitors", []) if m["name"] == name), None
+        )
+        if existing_cfg is not None:
+            if skip_all:
+                continue
+            dlg = _ConflictDialog(
+                parent,
+                "monitor",
+                name,
+                existing=_monitor_fields(existing_cfg),
+                incoming=_monitor_fields(monitor),
+            )
+            parent.wait_window(dlg)
+            if dlg.result == _ConflictDialog.CANCEL:
+                return False
+            if dlg.result == _ConflictDialog.SKIP:
+                continue
+            if dlg.result == _ConflictDialog.SKIP_ALL:
+                skip_all = True
+                continue
+            config["monitors"] = [
+                m for m in config["monitors"] if m["name"] != name
+            ]
+        config.setdefault("monitors", []).append(monitor)
+        stats["monitors"] += 1
+
+    # ── Regex Presets ─────────────────────────────────────────────────────
+    skip_all = False
+    for name, pattern in data.get("match_patterns", {}).items():
+        if name in PRESET_PATTERNS:
+            continue  # silently skip built-in names
+        existing_pattern = config.get("match_patterns", {}).get(name)
+        if existing_pattern is not None:
+            if skip_all:
+                continue
+            dlg = _ConflictDialog(
+                parent,
+                "preset",
+                name,
+                existing=_preset_fields(existing_pattern),
+                incoming=_preset_fields(pattern),
+            )
+            parent.wait_window(dlg)
+            if dlg.result == _ConflictDialog.CANCEL:
+                return False
+            if dlg.result == _ConflictDialog.SKIP:
+                continue
+            if dlg.result == _ConflictDialog.SKIP_ALL:
+                skip_all = True
+                continue
+        config.setdefault("match_patterns", {})[name] = pattern
+        stats["presets"] += 1
+
+    total = sum(stats.values())
+    if total == 0:
+        messagebox.showinfo(
+            "Import",
+            "Nothing new was imported — all items were skipped or already up to date.",
+            parent=parent,
+        )
+        return False
+
+    save_config(config)
+    parts = []
+    if stats["feeds"]:
+        parts.append(f"{stats['feeds']} feed(s)")
+    if stats["monitors"]:
+        parts.append(f"{stats['monitors']} monitor(s)")
+    if stats["presets"]:
+        parts.append(f"{stats['presets']} preset(s)")
+    messagebox.showinfo(
+        "Import Complete",
+        f"Successfully imported: {', '.join(parts)}.",
+        parent=parent,
+    )
+    return True

@@ -43,11 +43,13 @@ class DealsTab(ttk.Frame):
         self,
         parent: ttk.Notebook,
         on_check_now: Callable,
+        on_minimize: Callable = None,
         get_config: Callable = None,
         on_mark_seen: Callable = None,
     ) -> None:
         super().__init__(parent)
         self._on_check_now = on_check_now
+        self._on_minimize = on_minimize or (lambda: None)
         self._get_config = get_config or (lambda: {})
         self._on_mark_seen = on_mark_seen or (lambda item_id, seen: None)
         self._links: dict[str, str] = {}
@@ -67,12 +69,15 @@ class DealsTab(ttk.Frame):
         ttk.Label(
             toolbar, textvariable=self._status_var, foreground="#555"
         ).pack(side="left")
-        ttk.Button(toolbar, text="Clear", command=self._clear).pack(
-            side="right", padx=(4, 0)
+        ttk.Button(toolbar, text="⬇ Tray", command=self._on_minimize).pack(
+            side="right"
         )
         ttk.Button(
             toolbar, text="⚡ Check Now", command=self._on_check_now
-        ).pack(side="right")
+        ).pack(side="right", padx=(0, 4))
+        ttk.Button(toolbar, text="Clear", command=self._clear).pack(
+            side="right", padx=(0, 4)
+        )
 
         # Mark-seen / mark-new row
         mbar = ttk.Frame(self)

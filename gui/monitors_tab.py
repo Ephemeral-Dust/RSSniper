@@ -27,10 +27,14 @@ class MonitorsTab(ttk.Frame):
         parent: ttk.Notebook,
         get_config: Callable,
         save_config: Callable,
+        on_check_now: Callable = None,
+        on_minimize: Callable = None,
     ) -> None:
         super().__init__(parent)
         self._get_config = get_config
         self._save_config = save_config
+        self._on_check_now = on_check_now or (lambda: None)
+        self._on_minimize = on_minimize or (lambda: None)
         self._build()
         self.refresh()
 
@@ -47,6 +51,12 @@ class MonitorsTab(ttk.Frame):
         ttk.Button(
             toolbar, text="Toggle Enable/Disable", command=self._toggle
         ).pack(side="left", padx=(4, 0))
+        ttk.Button(toolbar, text="⬇ Tray", command=self._on_minimize).pack(
+            side="right"
+        )
+        ttk.Button(
+            toolbar, text="⚡ Check Now", command=self._on_check_now
+        ).pack(side="right", padx=(0, 4))
 
         frame = ttk.Frame(self)
         frame.pack(fill="both", expand=True, padx=6, pady=6)

@@ -264,3 +264,34 @@ def get_seen_items_since(
         }
         for r in rows
     ]
+
+
+def delete_deal_match(
+    conn: sqlite3.Connection, item_id: str, monitor_name: str
+) -> None:
+    """Remove a single (item_id, monitor_name) row from deal_matches."""
+    conn.execute(
+        "DELETE FROM deal_matches WHERE item_id = ? AND monitor_name = ?",
+        (item_id, monitor_name),
+    )
+    conn.commit()
+
+
+def get_seen_items_for_feed(
+    conn: sqlite3.Connection, feed_name: str
+) -> list[dict]:
+    """Return all seen_items rows for a given feed (no time filter)."""
+    rows = conn.execute(
+        "SELECT id, feed, title, url, published FROM seen_items WHERE feed = ?",
+        (feed_name,),
+    ).fetchall()
+    return [
+        {
+            "id": r[0],
+            "feed": r[1],
+            "title": r[2] or "",
+            "url": r[3] or "",
+            "published": r[4] or "",
+        }
+        for r in rows
+    ]

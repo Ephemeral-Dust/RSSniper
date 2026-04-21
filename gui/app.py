@@ -69,8 +69,8 @@ class App(tk.Tk):
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.after(100, self._poll_queue)
         self.after(
-            200, self._load_historical_deals
-        )  # populate from DB immediately
+            200, self._startup_pattern_cleanup
+        )  # clean stale DB entries, then populate deals
         if self._config.get("check_on_startup", True):
             self.after(1500, self._trigger_check)  # auto-check on startup
 
@@ -221,7 +221,14 @@ class App(tk.Tk):
         mb_settings = _mb("Settings")
         settings_menu = tk.Menu(mb_settings, tearoff=False, **self._menu_kw)
         settings_menu.add_command(
-            label="Settings…", command=self._open_settings
+            label="Settings\u2026", command=self._open_settings
+        )
+        settings_menu.add_separator()
+        settings_menu.add_command(
+            label="Export\u2026", command=self._open_export
+        )
+        settings_menu.add_command(
+            label="Import\u2026", command=self._open_import
         )
         mb_settings.config(menu=settings_menu)
 
@@ -233,31 +240,14 @@ class App(tk.Tk):
     # ── UI ─────────────────────────────────────────────────────────────────────
 
     def _build_ui(self) -> None:
-        toolbar = ttk.Frame(self)
-        toolbar.pack(fill="x", padx=6, pady=4)
-
-        ttk.Button(
-            toolbar, text="⚡ Check Now", command=self._trigger_check
-        ).pack(side="left")
-        self._interval_var = tk.StringVar(
-            value=f"  Polling every {self._config.get('check_interval_minutes', 15)} min"
-        )
-        ttk.Label(
-            toolbar, textvariable=self._interval_var, foreground="#555"
-        ).pack(side="left", padx=8)
-
-        ttk.Button(
-            toolbar, text="⬇ Tray", command=self._minimize_to_tray
-        ).pack(side="right")
-
-        ttk.Separator(self, orient="horizontal").pack(fill="x")
-
         notebook = ttk.Notebook(self)
         notebook.pack(fill="both", expand=True)
+        self._notebook = notebook
 
         self._deals_tab = DealsTab(
             notebook,
             on_check_now=self._trigger_check,
+            on_minimize=self._minimize_to_tray,
             get_config=lambda: self._config,
             on_mark_seen=lambda item_id, seen: set_deal_user_seen(
                 self._conn, item_id, seen
@@ -268,13 +258,22 @@ class App(tk.Tk):
             get_config=lambda: self._config,
             save_config=self._on_config_save,
             get_conn=lambda: self._conn,
+            on_feed_pattern_change=self._on_feed_pattern_change,
+            on_check_now=self._trigger_check,
+            on_minimize=self._minimize_to_tray,
         )
         self._monitors_tab = MonitorsTab(
             notebook,
             get_config=lambda: self._config,
             save_config=self._on_config_save,
+            on_check_now=self._trigger_check,
+            on_minimize=self._minimize_to_tray,
         )
-        self._log_tab = LogTab(notebook)
+        self._log_tab = LogTab(
+            notebook,
+            on_check_now=self._trigger_check,
+            on_minimize=self._minimize_to_tray,
+        )
 
         notebook.add(self._deals_tab, text="  Deals  ")
         notebook.add(self._feeds_tab, text="  Feeds  ")
@@ -384,6 +383,41 @@ class App(tk.Tk):
             time.sleep(5)
 
     # ── Check logic ────────────────────────────────────────────────────────────
+
+    def _on_feed_pattern_change(self, feed_name: str) -> None:
+        """Called when a feed's match_pattern is changed via the Feeds tab.
+
+        Re-evaluates all stored seen_items for that feed against every active
+        monitor, removes deals that no longer match, and adds any that now
+        match.  Then refreshes the Deals tab.
+        """
+        from watcher import reeval_feed_pattern
+
+        removed, added = reeval_feed_pattern(
+            self._config, self._conn, feed_name
+        )
+        self._deals_tab.clear()
+        self._load_historical_deals()
+        if removed or added:
+            self._set_status(
+                f"Pattern updated: {removed} deal(s) removed, {added} added."
+            )
+        else:
+            self._set_status("Pattern updated — no deal changes.")
+
+    def _startup_pattern_cleanup(self) -> None:
+        """Remove any deal_matches rows that don't satisfy current feed patterns.
+
+        Runs once at startup before the Deals tab is populated.  Handles
+        entries written in previous sessions before pattern filtering was
+        applied correctly.
+        """
+        from watcher import reeval_feed_pattern
+
+        for feed in self._config.get("feeds", []):
+            if feed.get("match_pattern"):
+                reeval_feed_pattern(self._config, self._conn, feed["name"])
+        self._load_historical_deals()
 
     def _load_historical_deals(self) -> None:
         """Populate the Deals tab from deal_matches already in the database.
@@ -509,13 +543,21 @@ class App(tk.Tk):
         self._apply_theme(updated.get("theme", "dark"))
         self._start_scheduler()  # restart scheduler with new interval
 
+    def _open_export(self) -> None:
+        from gui.dialogs import ExportDialog
+
+        ExportDialog(self, self._config)
+
+    def _open_import(self) -> None:
+        from gui.dialogs import run_import
+
+        run_import(self, lambda: self._config, self._on_config_save)
+
     def _on_config_save(self, config: dict) -> None:
         self._config = config
         save_config(config)
         self._feeds_tab.refresh()
         self._monitors_tab.refresh()
-        interval = config.get("check_interval_minutes", 15)
-        self._interval_var.set(f"  Polling every {interval} min")
 
     def _reload_config(self) -> None:
         self._config = load_config()

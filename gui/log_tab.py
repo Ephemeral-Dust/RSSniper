@@ -35,15 +35,25 @@ class LogTab(ttk.Frame):
         "CRITICAL": "#ff4040",
     }
 
-    def __init__(self, parent: ttk.Notebook) -> None:
+    def __init__(
+        self, parent: ttk.Notebook, on_check_now=None, on_minimize=None
+    ) -> None:
         super().__init__(parent)
+        self._on_check_now = on_check_now or (lambda: None)
+        self._on_minimize = on_minimize or (lambda: None)
         self._build()
 
     def _build(self) -> None:
         toolbar = ttk.Frame(self)
         toolbar.pack(fill="x", padx=6, pady=(6, 0))
-        ttk.Button(toolbar, text="Clear", command=self._clear).pack(
+        ttk.Button(toolbar, text="⬇ Tray", command=self._on_minimize).pack(
             side="right"
+        )
+        ttk.Button(
+            toolbar, text="⚡ Check Now", command=self._on_check_now
+        ).pack(side="right", padx=(0, 4))
+        ttk.Button(toolbar, text="Clear", command=self._clear).pack(
+            side="right", padx=(0, 4)
         )
 
         self._text = scrolledtext.ScrolledText(

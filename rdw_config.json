@@ -1,5 +1,4 @@
 {
-  "check_interval_minutes": 15,
   "feeds": [
     {
       "name": "r/deals",
@@ -19,18 +18,19 @@
     {
       "name": "r/gamedeals",
       "url": "https://www.reddit.com/r/gamedeals/.rss",
-      "type": "reddit"
-    },
-    {
-      "name": "r/laptopdeals",
-      "url": "https://old.reddit.com/r/laptopdeals/.rss",
-      "type": "reddit"
+      "type": "reddit",
+      "match_pattern": "\\[H\\](.+?)(?=\\[W\\]|$)"
     },
     {
       "name": "r/hardwareswap",
       "url": "https://old.reddit.com/r/hardwareswap/.rss",
       "type": "reddit",
-      "match_pattern": "\\[H\\](.+?)(?=\\[W\\]|$)"
+      "match_pattern": "\\[H\\](.+?)("
+    },
+    {
+      "name": "r/laptopdeals",
+      "url": "https://old.reddit.com/r/laptopdeals/.rss",
+      "type": "reddit"
     }
   ],
   "monitors": [
@@ -84,20 +84,5 @@
       ],
       "enabled": true
     }
-  ],
-  "notifications": {
-    "desktop": true,
-    "notify_historical": false,
-    "console": true
-  },
-  "user_agent": "RedditDealWatcher/1.0 (personal use)",
-  "check_on_startup": false,
-  "max_lookback_days": 3,
-  "max_entries_per_feed": 1000,
-  "request_timeout_seconds": 15,
-  "page_delay_seconds": 0.75,
-  "theme": "system",
-  "match_patterns": {
-    "asaw": "\\[H\\"
-  }
+  ]
 }
