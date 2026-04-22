@@ -7,6 +7,44 @@ from datetime import datetime, timezone
 from tkinter import ttk
 from typing import Callable, Union
 
+# ── Pattern-selector constants (shared by AddFeedDialog and FeedsTab) ─────────
+PATTERN_NONE_LABEL = "Full text (default)"
+PATTERN_BUILTIN_SEP = "\u2500\u2500 Built-in presets \u2500\u2500"
+PATTERN_CUSTOM_SEP = "\u2500\u2500 My presets \u2500\u2500"
+
+# ── Log-level colours ─────────────────────────────────────────────────────────
+LOG_COLORS_DARK: dict[str, str] = {
+    "DEBUG": "#888888",
+    "INFO": "#d4d4d4",
+    "WARNING": "#f0a030",
+    "ERROR": "#f04040",
+    "CRITICAL": "#ff4040",
+}
+LOG_COLORS_LIGHT: dict[str, str] = {
+    "DEBUG": "#888888",
+    "INFO": "#1a1a1a",
+    "WARNING": "#b36b00",
+    "ERROR": "#cc0000",
+    "CRITICAL": "#cc0000",
+}
+
+
+def center_on_parent(dialog: tk.Toplevel, parent: tk.Widget) -> None:
+    """Centre *dialog* over *parent* and make it visible."""
+    dialog.update_idletasks()
+    # For windows with an explicit geometry("WxH") call, winfo_reqwidth/height
+    # may return 1 because PanedWindow/Treeview have tiny natural sizes.
+    # Parse the stored geometry string as a reliable source of the real size.
+    geo = dialog.geometry()  # "WxH+X+Y"
+    wh = geo.split("+")[0].split("x")
+    geo_w, geo_h = int(wh[0]), int(wh[1])
+    dw = max(geo_w, dialog.winfo_reqwidth())
+    dh = max(geo_h, dialog.winfo_reqheight())
+    pw = parent.winfo_rootx() + parent.winfo_width() // 2 - dw // 2
+    ph = parent.winfo_rooty() + parent.winfo_height() // 2 - dh // 2
+    dialog.geometry(f"{dw}x{dh}+{pw}+{ph}")
+    dialog.deiconify()
+
 
 def apply_dialog_icon(dialog: tk.Toplevel) -> None:
     """Apply the app icon to a Toplevel dialog window."""

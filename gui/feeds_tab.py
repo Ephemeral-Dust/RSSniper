@@ -3,21 +3,25 @@ import webbrowser
 from tkinter import messagebox, ttk
 from typing import Callable
 
-from gui.utils import attach_context_menu
+from gui.utils import (
+    attach_context_menu,
+    PATTERN_NONE_LABEL,
+    PATTERN_BUILTIN_SEP,
+    PATTERN_CUSTOM_SEP,
+)
 
 
 class FeedsTab(ttk.Frame):
-    _COLUMNS = ("name", "url", "type", "pattern")
+    _COLUMNS = ("name", "url", "pattern")
     _HEADINGS = {
         "name": "Name",
         "url": "URL",
-        "type": "Type",
         "pattern": "Match Pattern",
     }
-    _WIDTHS = {"name": 150, "url": 380, "type": 70, "pattern": 200}
-    _NONE_LABEL = "Full text (default)"
-    _BUILTIN_SEP = "\u2500\u2500 Built-in presets \u2500\u2500"
-    _CUSTOM_SEP = "\u2500\u2500 My presets \u2500\u2500"
+    _WIDTHS = {"name": 150, "url": 430, "pattern": 200}
+    _NONE_LABEL = PATTERN_NONE_LABEL
+    _BUILTIN_SEP = PATTERN_BUILTIN_SEP
+    _CUSTOM_SEP = PATTERN_CUSTOM_SEP
 
     def __init__(
         self,
@@ -119,7 +123,6 @@ class FeedsTab(ttk.Frame):
                 values=(
                     f["name"],
                     f["url"],
-                    f.get("type", "rss"),
                     f"{display} \u25be",
                 ),
             )
@@ -134,7 +137,7 @@ class FeedsTab(ttk.Frame):
         for f in self._get_config()["feeds"]:
             if f["name"] == name:
                 return f
-        return {"name": values[0], "url": values[1], "type": values[2]}
+        return {"name": values[0], "url": values[1]}
 
     def _add(self) -> None:
         from gui.dialogs import AddFeedDialog
@@ -149,12 +152,11 @@ class FeedsTab(ttk.Frame):
             return
         name = dlg.result["name"]
         url = dlg.result["url"]
-        feed_type = dlg.result["type"]
         config = self._get_config()
         if any(f["name"] == name for f in config["feeds"]):
             messagebox.showerror("Duplicate", f"Feed '{name}' already exists.")
             return
-        entry: dict = {"name": name, "url": url, "type": feed_type}
+        entry: dict = {"name": name, "url": url}
         if dlg.result.get("match_pattern"):
             entry["match_pattern"] = dlg.result["match_pattern"]
         config["feeds"].append(entry)
@@ -177,7 +179,6 @@ class FeedsTab(ttk.Frame):
             return
         new_name = dlg.result["name"]
         new_url = dlg.result["url"]
-        new_type = dlg.result["type"]
         new_pattern = dlg.result.get("match_pattern", "")
         old_pattern = feed_cfg.get("match_pattern", "")
         old_name = feed_cfg["name"]
@@ -195,7 +196,6 @@ class FeedsTab(ttk.Frame):
             if f["name"] == old_name:
                 f["name"] = new_name
                 f["url"] = new_url
-                f["type"] = new_type
                 if new_pattern:
                     f["match_pattern"] = new_pattern
                 else:
@@ -284,7 +284,7 @@ class FeedsTab(ttk.Frame):
     def _on_tree_motion(self, event) -> None:
         col = self._tree.identify_column(event.x)
         iid = self._tree.identify_row(event.y)
-        if col == "#4" and iid:
+        if col == "#3" and iid:
             self._tree.config(cursor="hand2")
         else:
             self._tree.config(cursor="")
@@ -298,7 +298,7 @@ class FeedsTab(ttk.Frame):
                 return
 
         col = self._tree.identify_column(event.x)
-        if col != "#4":  # not the pattern column
+        if col != "#3":  # not the pattern column
             self._close_pattern_popup()
             return
         iid = self._tree.identify_row(event.y)

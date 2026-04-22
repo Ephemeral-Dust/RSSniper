@@ -2,23 +2,7 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Optional
 
-from gui.utils import apply_dialog_icon
-
-
-def _center_on_parent(dialog: tk.Toplevel, parent: tk.Widget) -> None:
-    dialog.update_idletasks()
-    # For windows with an explicit geometry("WxH") call, winfo_reqwidth/height
-    # may return 1 because PanedWindow/Treeview have tiny natural sizes.
-    # Parse the stored geometry string as a reliable source of the real size.
-    geo = dialog.geometry()  # "WxH+X+Y"
-    wh = geo.split("+")[0].split("x")
-    geo_w, geo_h = int(wh[0]), int(wh[1])
-    dw = max(geo_w, dialog.winfo_reqwidth())
-    dh = max(geo_h, dialog.winfo_reqheight())
-    pw = parent.winfo_rootx() + parent.winfo_width() // 2 - dw // 2
-    ph = parent.winfo_rooty() + parent.winfo_height() // 2 - dh // 2
-    dialog.geometry(f"{dw}x{dh}+{pw}+{ph}")
-    dialog.deiconify()
+from gui.utils import apply_dialog_icon, center_on_parent as _center_on_parent
 
 
 class SettingsDialog(tk.Toplevel):
@@ -179,6 +163,34 @@ class SettingsDialog(tk.Toplevel):
             variable=self._notify_console_var,
         ).grid(row=2, column=0, sticky="w", pady=3)
 
+        # ── Logging ────────────────────────────────────────────────────────────
+        log_frame = ttk.LabelFrame(outer, text=" Logging ", padding=10)
+        log_frame.grid(row=5, column=0, sticky="ew", pady=(0, 8))
+        log_cfg: dict = self._cfg.get("logging", {})
+
+        lf_row = ttk.Frame(log_frame)
+        lf_row.grid(row=0, column=0, sticky="w", pady=3)
+        ttk.Label(lf_row, text="Log level filter:").pack(side="left")
+        self._log_level_var = tk.StringVar(
+            value=log_cfg.get("level_filter", "DEBUG")
+        )
+        ttk.Combobox(
+            lf_row,
+            textvariable=self._log_level_var,
+            values=["DEBUG", "INFO", "WARNING", "ERROR"],
+            state="readonly",
+            width=10,
+        ).pack(side="left", padx=(8, 0))
+
+        self._log_file_var = tk.BooleanVar(
+            value=log_cfg.get("save_to_file", False)
+        )
+        ttk.Checkbutton(
+            log_frame,
+            text="Save log to file  (logs/rdw.log, max 2 MB × 3 backups)",
+            variable=self._log_file_var,
+        ).grid(row=1, column=0, sticky="w", pady=3)
+
         # ── Buttons ────────────────────────────────────────────────────────────
         sep = ttk.Separator(outer, orient="horizontal")
         sep.grid(row=6, column=0, sticky="ew", pady=(4, 0))
@@ -255,6 +267,10 @@ class SettingsDialog(tk.Toplevel):
                 "desktop": self._notify_desktop_var.get(),
                 "notify_historical": self._notify_historical_var.get(),
                 "console": self._notify_console_var.get(),
+            },
+            "logging": {
+                "level_filter": self._log_level_var.get(),
+                "save_to_file": self._log_file_var.get(),
             },
         }
         self.destroy()

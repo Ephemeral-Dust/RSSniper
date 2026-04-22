@@ -54,8 +54,8 @@ class DealsTab(ttk.Frame):
         self._on_mark_seen = on_mark_seen or (lambda item_id, seen: None)
         self._links: dict[str, str] = {}
         self._all_deals: list[dict] = []
-        self._sort_col: Optional[str] = None
-        self._sort_rev: bool = False
+        self._sort_col: Optional[str] = "discovered"
+        self._sort_rev: bool = True
         self._build()
 
     # ── Build ──────────────────────────────────────────────────────────────
@@ -353,15 +353,14 @@ class DealsTab(ttk.Frame):
             )
             self._links[iid] = deal["url"]
 
+        self._apply_sort_to_tree()
+
     # ── Sort ───────────────────────────────────────────────────────────────
 
-    def _sort_by(self, col: str) -> None:
-        if self._sort_col == col:
-            self._sort_rev = not self._sort_rev
-        else:
-            self._sort_col = col
-            self._sort_rev = False
-
+    def _apply_sort_to_tree(self) -> None:
+        if self._sort_col is None:
+            return
+        col = self._sort_col
         items = [
             (self._tree.set(iid, col), iid)
             for iid in self._tree.get_children("")
@@ -369,7 +368,6 @@ class DealsTab(ttk.Frame):
         items.sort(key=lambda x: x[0].lower(), reverse=self._sort_rev)
         for idx, (_, iid) in enumerate(items):
             self._tree.move(iid, "", idx)
-
         for c in self._COLUMNS:
             arrow = (" ▼" if self._sort_rev else " ▲") if c == col else ""
             self._tree.heading(
@@ -377,6 +375,14 @@ class DealsTab(ttk.Frame):
                 text=self._HEADINGS[c] + arrow,
                 command=lambda _c=c: self._sort_by(_c),
             )
+
+    def _sort_by(self, col: str) -> None:
+        if self._sort_col == col:
+            self._sort_rev = not self._sort_rev
+        else:
+            self._sort_col = col
+            self._sort_rev = False
+        self._apply_sort_to_tree()
 
     # ── Preview ────────────────────────────────────────────────────────────
 

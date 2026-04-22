@@ -29,12 +29,16 @@ class MonitorsTab(ttk.Frame):
         save_config: Callable,
         on_check_now: Callable = None,
         on_minimize: Callable = None,
+        on_monitor_toggle: Callable = None,
     ) -> None:
         super().__init__(parent)
         self._get_config = get_config
         self._save_config = save_config
         self._on_check_now = on_check_now or (lambda: None)
         self._on_minimize = on_minimize or (lambda: None)
+        self._on_monitor_toggle = on_monitor_toggle or (
+            lambda name, enabled: None
+        )
         self._build()
         self.refresh()
 
@@ -208,5 +212,9 @@ class MonitorsTab(ttk.Frame):
         for m in config["monitors"]:
             if m["name"] == name:
                 m["enabled"] = not m.get("enabled", True)
+                new_state = m["enabled"]
                 break
+        else:
+            return
         self._save_config(config)
+        self._on_monitor_toggle(name, new_state)

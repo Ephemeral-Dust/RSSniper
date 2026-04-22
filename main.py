@@ -49,9 +49,8 @@ def cli_list(config: dict) -> None:
     )
     feed_table.add_column("Name", style="cyan")
     feed_table.add_column("URL")
-    feed_table.add_column("Type")
     for f in config["feeds"]:
-        feed_table.add_row(f["name"], f["url"], f.get("type", "rss"))
+        feed_table.add_row(f["name"], f["url"])
     console.print(feed_table)
 
     mon_table = Table(
@@ -97,11 +96,11 @@ def cli_watch(config: dict, conn) -> None:
         log.info("Watcher stopped.")
 
 
-def cli_add_feed(config: dict, name: str, url: str, feed_type: str) -> None:
+def cli_add_feed(config: dict, name: str, url: str) -> None:
     if any(f["name"] == name for f in config["feeds"]):
         console.print(f"[red]Feed '{name}' already exists.[/red]")
         return
-    config["feeds"].append({"name": name, "url": url, "type": feed_type})
+    config["feeds"].append({"name": name, "url": url})
     save_config(config)
     console.print(f"[green]Feed '{name}' added.[/green]")
 
@@ -142,7 +141,7 @@ Examples:
   python main.py watch              # CLI continuous polling
   python main.py check              # CLI one-shot check
   python main.py list               # CLI list feeds and monitors
-  python main.py add-feed "r/mechmarket" https://www.reddit.com/r/mechmarket/.rss --type reddit
+  python main.py add-feed "r/mechmarket" https://www.reddit.com/r/mechmarket/.rss
   python main.py add-monitor "Keyboard" --terms "Keychron" "GMMK" --max-price 150 --feeds "r/mechmarket"
         """,
     )
@@ -156,9 +155,6 @@ Examples:
     p_feed = sub.add_parser("add-feed", help="Add a new RSS feed")
     p_feed.add_argument("name", help='Display name, e.g. "r/deals"')
     p_feed.add_argument("url", help="Full RSS URL")
-    p_feed.add_argument(
-        "--type", default="rss", choices=["rss", "reddit"], dest="feed_type"
-    )
 
     p_mon = sub.add_parser("add-monitor", help="Add a new monitor rule")
     p_mon.add_argument("name", help="Monitor label")
@@ -187,7 +183,7 @@ Examples:
         elif command == "check":
             run_check(config, conn)
         elif command == "add-feed":
-            cli_add_feed(config, args.name, args.url, args.feed_type)
+            cli_add_feed(config, args.name, args.url)
         elif command == "add-monitor":
             cli_add_monitor(
                 config, args.name, args.terms, args.max_price, args.feeds

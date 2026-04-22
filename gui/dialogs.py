@@ -5,29 +5,20 @@ from html.parser import HTMLParser
 from tkinter import messagebox, ttk
 from typing import Callable, Optional
 
-from gui.utils import apply_dialog_icon, fmt_dt
-
-
-def _center_on_parent(dialog: tk.Toplevel, parent: tk.Widget) -> None:
-    dialog.update_idletasks()
-    # For windows with an explicit geometry("WxH") call, winfo_reqwidth/height
-    # may return 1 because PanedWindow/Treeview have tiny natural sizes.
-    # Parse the stored geometry string as a reliable source of the real size.
-    geo = dialog.geometry()  # "WxH+X+Y"
-    wh = geo.split("+")[0].split("x")
-    geo_w, geo_h = int(wh[0]), int(wh[1])
-    dw = max(geo_w, dialog.winfo_reqwidth())
-    dh = max(geo_h, dialog.winfo_reqheight())
-    pw = parent.winfo_rootx() + parent.winfo_width() // 2 - dw // 2
-    ph = parent.winfo_rooty() + parent.winfo_height() // 2 - dh // 2
-    dialog.geometry(f"{dw}x{dh}+{pw}+{ph}")
-    dialog.deiconify()
+from gui.utils import (
+    apply_dialog_icon,
+    center_on_parent as _center_on_parent,
+    fmt_dt,
+    PATTERN_NONE_LABEL,
+    PATTERN_BUILTIN_SEP,
+    PATTERN_CUSTOM_SEP,
+)
 
 
 class AddFeedDialog(tk.Toplevel):
-    _NONE_LABEL = "Full text (default)"
-    _BUILTIN_SEP = "\u2500\u2500 Built-in presets \u2500\u2500"
-    _CUSTOM_SEP = "\u2500\u2500 My presets \u2500\u2500"
+    _NONE_LABEL = PATTERN_NONE_LABEL
+    _BUILTIN_SEP = PATTERN_BUILTIN_SEP
+    _CUSTOM_SEP = PATTERN_CUSTOM_SEP
 
     def __init__(
         self,
@@ -83,13 +74,6 @@ class AddFeedDialog(tk.Toplevel):
         self._url.grid(
             row=1, column=1, columnspan=2, sticky="ew", pady=4, padx=(8, 0)
         )
-
-        ttk.Label(f, text="Type:").grid(row=2, column=0, sticky="w", pady=4)
-        self._type = ttk.Combobox(
-            f, values=["reddit", "rss"], state="readonly", width=10
-        )
-        self._type.set("reddit")
-        self._type.grid(row=2, column=1, sticky="w", pady=4, padx=(8, 0))
 
         sep = ttk.Separator(f, orient="horizontal")
         sep.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(10, 0))
@@ -167,7 +151,6 @@ class AddFeedDialog(tk.Toplevel):
         if self._initial:
             self._name.insert(0, self._initial.get("name", ""))
             self._url.insert(0, self._initial.get("url", ""))
-            self._type.set(self._initial.get("type", "reddit"))
             stored_pattern = self._initial.get("match_pattern", "")
             if stored_pattern:
                 self._pattern.insert(0, stored_pattern)
@@ -248,7 +231,6 @@ class AddFeedDialog(tk.Toplevel):
         self.result = {
             "name": name,
             "url": url,
-            "type": self._type.get(),
             "match_pattern": self._pattern.get().strip(),
         }
         self.destroy()
@@ -312,8 +294,12 @@ class AddMonitorDialog(tk.Toplevel):
         ).pack(side="left")
 
         ttk.Label(f, text="Feeds:").grid(row=5, column=0, sticky="nw", pady=6)
-        feed_frame = ttk.LabelFrame(f, text="  apply to  ", padding=6)
-        feed_frame.grid(row=5, column=1, sticky="ew", pady=4, padx=(8, 0))
+        feeds_outer = ttk.Frame(f)
+        feeds_outer.grid(row=5, column=1, sticky="ew", pady=4, padx=(8, 0))
+        feed_frame = ttk.LabelFrame(
+            feeds_outer, text="  apply to  ", padding=6
+        )
+        feed_frame.pack(fill="x", expand=True)
         self._feed_vars: dict[str, tk.BooleanVar] = {}
         for name in self._feed_names:
             var = tk.BooleanVar(value=True)
@@ -325,6 +311,25 @@ class AddMonitorDialog(tk.Toplevel):
             ttk.Label(
                 feed_frame, text="(no feeds configured yet)", foreground="#888"
             ).pack()
+        else:
+            feed_btn_row = ttk.Frame(feeds_outer)
+            feed_btn_row.pack(fill="x", pady=(4, 0))
+            ttk.Button(
+                feed_btn_row,
+                text="Select All",
+                width=10,
+                command=lambda: [
+                    v.set(True) for v in self._feed_vars.values()
+                ],
+            ).pack(side="left", padx=(0, 4))
+            ttk.Button(
+                feed_btn_row,
+                text="Clear",
+                width=10,
+                command=lambda: [
+                    v.set(False) for v in self._feed_vars.values()
+                ],
+            ).pack(side="left")
 
         sep = ttk.Separator(f, orient="horizontal")
         sep.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(10, 0))
@@ -1287,7 +1292,6 @@ def run_import(
         raw_pattern = feed.get("match_pattern", "")
         return [
             ("URL", feed.get("url", "—")),
-            ("Type", feed.get("type", "rss")),
             ("Pattern", _preset_label(raw_pattern, user_presets)),
         ]
 

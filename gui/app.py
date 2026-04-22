@@ -49,7 +49,6 @@ class App(tk.Tk):
 
         self._checking = False
         self._watcher_running = False
-        self._watcher_thread: Optional[threading.Thread] = None
         self._tray_icon: Optional[object] = None
         self._tray_started = False
 
@@ -75,21 +74,6 @@ class App(tk.Tk):
             self.after(1500, self._trigger_check)  # auto-check on startup
 
     # ── Style ──────────────────────────────────────────────────────────────────
-
-    _LOG_COLORS_DARK = {
-        "DEBUG": "#888888",
-        "INFO": "#d4d4d4",
-        "WARNING": "#f0a030",
-        "ERROR": "#f04040",
-        "CRITICAL": "#ff4040",
-    }
-    _LOG_COLORS_LIGHT = {
-        "DEBUG": "#888888",
-        "INFO": "#1a1a1a",
-        "WARNING": "#b36b00",
-        "ERROR": "#cc0000",
-        "CRITICAL": "#cc0000",
-    }
 
     def _setup_style(self) -> None:
         # Initial menu_kw placeholder (populated by _apply_theme)
@@ -147,15 +131,7 @@ class App(tk.Tk):
 
         # Update log tab colours if already built
         if hasattr(self, "_log_tab"):
-            colors = (
-                self._LOG_COLORS_DARK if is_dark else self._LOG_COLORS_LIGHT
-            )
-            text_widget = self._log_tab._text
-            bg = "#1c1c1c" if is_dark else "#ffffff"
-            fg = "#d4d4d4" if is_dark else "#1a1a1a"
-            text_widget.config(background=bg, foreground=fg)
-            for level, color in colors.items():
-                text_widget.tag_configure(level, foreground=color)
+            self._log_tab.set_theme(is_dark)
 
     def _apply_dark_titlebar(self, is_dark: bool = True) -> None:
         """Ask Windows DWM to render a dark or light title bar on Windows 10/11."""
@@ -268,11 +244,17 @@ class App(tk.Tk):
             save_config=self._on_config_save,
             on_check_now=self._trigger_check,
             on_minimize=self._minimize_to_tray,
+            on_monitor_toggle=self._on_monitor_toggle,
         )
+        log_cfg = self._config.get("logging", {})
         self._log_tab = LogTab(
             notebook,
             on_check_now=self._trigger_check,
             on_minimize=self._minimize_to_tray,
+            level_filter=log_cfg.get("level_filter", "DEBUG"),
+            save_to_file=log_cfg.get("save_to_file", False),
+            on_level_change=self._on_log_level_change,
+            on_save_to_file_change=self._on_log_file_change,
         )
 
         notebook.add(self._deals_tab, text="  Deals  ")
@@ -353,8 +335,6 @@ class App(tk.Tk):
         self.focus_force()
 
     def _exit_app(self) -> None:
-        if self._tray_icon is not None and self._tray_started:
-            self._tray_icon.stop()
         self._on_close()
 
     # ── Logging ────────────────────────────────────────────────────────────────
@@ -364,6 +344,63 @@ class App(tk.Tk):
         watcher_log = logging.getLogger("watcher")
         watcher_log.setLevel(logging.DEBUG)
         watcher_log.addHandler(handler)
+        self._file_handler: logging.FileHandler | None = None
+        if self._config.get("logging", {}).get("save_to_file", False):
+            self._attach_file_handler()
+
+    def _attach_file_handler(self) -> None:
+        """Create a rotating file handler and attach it to the watcher logger."""
+        if self._file_handler is not None:
+            return  # already attached
+        try:
+            from logging.handlers import RotatingFileHandler
+            from paths import get_data_dir
+
+            log_dir = get_data_dir() / "logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            log_path = log_dir / "rdw.log"
+            fh = RotatingFileHandler(
+                log_path,
+                maxBytes=2 * 1024 * 1024,
+                backupCount=3,
+                encoding="utf-8",
+            )
+            fh.setLevel(logging.DEBUG)
+            fh.setFormatter(
+                logging.Formatter(
+                    "%(asctime)s  %(levelname)-8s  %(message)s",
+                    datefmt="%Y-%m-%d %H:%M:%S",
+                )
+            )
+            logging.getLogger("watcher").addHandler(fh)
+            self._file_handler = fh
+        except Exception as exc:
+            logging.getLogger("watcher").warning(
+                f"Could not open log file: {exc}"
+            )
+
+    def _detach_file_handler(self) -> None:
+        if self._file_handler is None:
+            return
+        logger = logging.getLogger("watcher")
+        logger.removeHandler(self._file_handler)
+        try:
+            self._file_handler.close()
+        except Exception:
+            pass
+        self._file_handler = None
+
+    def _on_log_level_change(self, level: str) -> None:
+        self._config.setdefault("logging", {})["level_filter"] = level
+        save_config(self._config)
+
+    def _on_log_file_change(self, enabled: bool) -> None:
+        self._config.setdefault("logging", {})["save_to_file"] = enabled
+        save_config(self._config)
+        if enabled:
+            self._attach_file_handler()
+        else:
+            self._detach_file_handler()
 
     # ── Scheduler ─────────────────────────────────────────────────────────────
 
@@ -372,10 +409,9 @@ class App(tk.Tk):
         schedule.clear()
         schedule.every(interval).minutes.do(self._trigger_check)
         self._watcher_running = True
-        self._watcher_thread = threading.Thread(
+        threading.Thread(
             target=self._scheduler_loop, daemon=True, name="watcher-scheduler"
-        )
-        self._watcher_thread.start()
+        ).start()
 
     def _scheduler_loop(self) -> None:
         while self._watcher_running:
@@ -383,6 +419,88 @@ class App(tk.Tk):
             time.sleep(5)
 
     # ── Check logic ────────────────────────────────────────────────────────────
+
+    def _on_monitor_toggle(self, monitor_name: str, enabled: bool) -> None:
+        """Called when a monitor is enabled/disabled via the Monitors tab.
+
+        Removes deal_matches rows for a disabled monitor and re-adds any
+        matching stored items for a newly-enabled monitor, then reloads the
+        Deals tab.
+        """
+        from database import delete_deal_match, get_seen_items_for_feed
+
+        if not enabled:
+            # Remove all deal_matches for this monitor from the DB.
+            feeds_by_name = {
+                f["name"]: f for f in self._config.get("feeds", [])
+            }
+            removed = 0
+            for feed_name in feeds_by_name:
+                for item in get_seen_items_for_feed(self._conn, feed_name):
+                    from database import is_deal_matched
+
+                    if is_deal_matched(self._conn, item["id"], monitor_name):
+                        delete_deal_match(self._conn, item["id"], monitor_name)
+                        removed += 1
+            self._deals_tab.clear()
+            self._load_historical_deals()
+            self._set_status(
+                f"Monitor disabled: {removed} deal(s) removed from view."
+            )
+        else:
+            # Re-run scan for this monitor only so newly-matching items appear.
+            from watcher import extract_match_text, matches_monitor
+            from database import (
+                is_deal_matched,
+                mark_deal_matched,
+                get_seen_items_since,
+            )
+            from datetime import datetime, timedelta, timezone
+
+            lookback = self._config.get("max_lookback_days", 3)
+            since = datetime.now(timezone.utc) - timedelta(days=lookback)
+            items = get_seen_items_since(self._conn, since)
+            feeds_by_name = {
+                f["name"]: f for f in self._config.get("feeds", [])
+            }
+            monitor = next(
+                (
+                    m
+                    for m in self._config["monitors"]
+                    if m["name"] == monitor_name
+                ),
+                None,
+            )
+            if monitor is None:
+                return
+            target_feeds = set(
+                monitor.get("feeds", list(feeds_by_name.keys()))
+            )
+            added = 0
+            for item in items:
+                if item["feed"] not in target_feeds:
+                    continue
+                if is_deal_matched(self._conn, item["id"], monitor_name):
+                    continue
+                feed_cfg = feeds_by_name.get(item["feed"], {})
+                match_text = extract_match_text(
+                    {"title": item["title"], "summary": ""}, feed_cfg
+                )
+                matched, price = matches_monitor(match_text, monitor)
+                if matched:
+                    mark_deal_matched(
+                        self._conn,
+                        item["id"],
+                        monitor_name,
+                        price=price,
+                        published=item.get("published", ""),
+                    )
+                    added += 1
+            self._deals_tab.clear()
+            self._load_historical_deals()
+            self._set_status(
+                f"Monitor enabled: {added} deal(s) added to view."
+            )
 
     def _on_feed_pattern_change(self, feed_name: str) -> None:
         """Called when a feed's match_pattern is changed via the Feeds tab.
@@ -514,7 +632,10 @@ class App(tk.Tk):
                         f"New deal — {msg['monitor_name']}: {title_short}"
                     )
                 elif mtype == "log":
-                    self._log_tab.append(msg["level"], msg["message"])
+                    if self._config.get("notifications", {}).get(
+                        "console", True
+                    ):
+                        self._log_tab.append(msg["level"], msg["message"])
                 elif mtype == "check_end":
                     self._checking = False
                     ts = datetime.now().strftime("%H:%M:%S")
@@ -558,6 +679,21 @@ class App(tk.Tk):
         save_config(config)
         self._feeds_tab.refresh()
         self._monitors_tab.refresh()
+        # Sync log tab state if the user changed log settings via Settings dialog
+        log_cfg = config.get("logging", {})
+        new_level = log_cfg.get("level_filter", "DEBUG")
+        new_file = log_cfg.get("save_to_file", False)
+        if self._log_tab._level_filter != new_level:
+            self._log_tab._level_filter = new_level
+            self._log_tab._level_var.set(new_level)
+            self._log_tab._redraw()
+        if self._log_tab._save_to_file != new_file:
+            self._log_tab._save_to_file = new_file
+            self._log_tab._file_var.set(new_file)
+            if new_file:
+                self._attach_file_handler()
+            else:
+                self._detach_file_handler()
 
     def _reload_config(self) -> None:
         self._config = load_config()

@@ -15,7 +15,6 @@ from database import (
     is_deal_matched,
     mark_deal_matched,
     get_seen_items_since,
-    get_recent_deal_matches,
     sync_deal_matches_published,
     delete_deal_match,
     get_seen_items_for_feed,
@@ -157,10 +156,11 @@ def fetch_feed(
 ) -> list[dict]:
     """Fetch an RSS/Atom feed, paginating back to *cutoff*.
 
-    For Reddit feeds the ``?after=t3_POSTID&limit=100`` query parameters are
-    used to walk through older pages until every entry on the current page
-    pre-dates *cutoff* or *max_entries* entries have been collected.
-    Non-Reddit feeds are fetched once with ``limit=100``.
+    Pagination is attempted automatically using Reddit's ``?after=t3_POSTID``
+    cursor.  For non-Reddit feeds ``_reddit_fullname`` returns ``None`` and the
+    loop stops after the first page, so the behaviour is identical to before.
+    A seen-IDs guard prevents infinite loops if a feed returns the same page
+    twice.
 
     *cutoff* defaults to ``MAX_LOOKBACK_DAYS`` ago (UTC).
     """
@@ -169,11 +169,9 @@ def fetch_feed(
 
     headers = {"User-Agent": user_agent}
     base_url = feed_cfg["url"]
-    is_reddit = (
-        feed_cfg.get("type", "") == "reddit" or "reddit.com" in base_url
-    )
 
     all_entries: list[dict] = []
+    seen_ids: set[str] = set()
     after: Optional[str] = None
     first_page = True
 
@@ -200,12 +198,19 @@ def fetch_feed(
             break
 
         oldest_in_page: Optional[datetime] = None
+        new_on_page = 0
         for e in parsed.entries:
+            entry_id = getattr(e, "id", None) or e.get("link", "")
+            if entry_id in seen_ids:
+                continue  # duplicate page — stop pagination
+            seen_ids.add(entry_id)
+            new_on_page += 1
+
             pub = _parse_published(e)
             raw_summary = getattr(e, "summary", "") or ""
             all_entries.append(
                 {
-                    "id": getattr(e, "id", None) or e.get("link", ""),
+                    "id": entry_id,
                     "title": getattr(e, "title", ""),
                     "link": getattr(e, "link", ""),
                     "summary": strip_html(raw_summary),
@@ -217,17 +222,18 @@ def fetch_feed(
             if pub and (oldest_in_page is None or pub < oldest_in_page):
                 oldest_in_page = pub
 
+        if new_on_page == 0:
+            break  # all entries on this page were duplicates
+
         # Stop once the oldest entry on this page predates the cutoff
         if oldest_in_page is not None and oldest_in_page < cutoff:
-            break
-
-        # Non-Reddit feeds don't support Reddit-style cursor pagination
-        if not is_reddit:
             break
 
         if len(all_entries) >= max_entries:
             break
 
+        # Attempt to get the next-page cursor (Reddit-style).
+        # For non-Reddit feeds this returns None and pagination stops.
         last_link = getattr(parsed.entries[-1], "link", "")
         after = _reddit_fullname(last_link)
         if not after:

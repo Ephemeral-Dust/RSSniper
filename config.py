@@ -55,8 +55,11 @@ DEFAULT_CONFIG: dict = {
     ],
     "notifications": {
         "desktop": True,
-        "console": True,
         "notify_historical": False,
+    },
+    "logging": {
+        "level_filter": "DEBUG",
+        "save_to_file": False,
     },
     "user_agent": "RedditDealWatcher/1.0 (personal use)",
     "theme": "dark",
