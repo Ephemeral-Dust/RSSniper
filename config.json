@@ -40,62 +40,34 @@
   "monitors": [
     {
       "name": "GPU Deals",
-      "terms": [
-        "RTX 4070",
-        "RX 7800 XT",
-        "RX 7900"
-      ],
+      "terms": ["RTX 4070", "RX 7800 XT", "RX 7900"],
       "max_price": 400.0,
-      "feeds": [
-        "r/deals",
-        "r/buildapcsales",
-        "r/hardwareswap"
-      ],
+      "feeds": ["r/deals", "r/buildapcsales", "r/hardwareswap"],
       "enabled": false
     },
     {
       "name": "Example Game Deal",
-      "terms": [
-        "Elden Ring",
-        "Cyberpunk"
-      ],
+      "terms": ["Elden Ring", "Cyberpunk"],
       "max_price": 20.0,
-      "feeds": [
-        "r/gamedeals"
-      ],
+      "feeds": ["r/gamedeals"],
       "enabled": false
     },
     {
       "name": "Surface Pro",
-      "terms": [
-        "Surface Pro",
-        "Microsoft Surface Pro"
-      ],
-      "feeds": [
-        "r/deals",
-        "r/buildapcsales",
-        "r/hardwareswap"
-      ],
+      "terms": ["Surface Pro", "Microsoft Surface Pro"],
+      "feeds": ["r/deals", "r/buildapcsales", "r/hardwareswap"],
       "enabled": true
     },
     {
       "name": "Laptops",
-      "terms": [
-        "laptop"
-      ],
-      "feeds": [
-        "r/hardwareswap"
-      ],
+      "terms": ["laptop"],
+      "feeds": ["r/hardwareswap"],
       "enabled": false
     },
     {
       "name": "Mouse",
-      "terms": [
-        "mouse"
-      ],
-      "feeds": [
-        "spoofee"
-      ],
+      "terms": ["mouse"],
+      "feeds": ["spoofee"],
       "enabled": true
     }
   ],
@@ -104,7 +76,7 @@
     "notify_historical": false,
     "console": true
   },
-  "user_agent": "RedditDealWatcher/1.0 (personal use)",
+  "user_agent": "RSSniper/1.0 (personal use)",
   "check_on_startup": false,
   "max_lookback_days": 3,
   "max_entries_per_feed": 1000,

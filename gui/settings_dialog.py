@@ -108,9 +108,7 @@ class SettingsDialog(tk.Toplevel):
         )
         self._user_agent.insert(
             0,
-            self._cfg.get(
-                "user_agent", "RedditDealWatcher/1.0 (personal use)"
-            ),
+            self._cfg.get("user_agent", "RSSniper/1.0 (personal use)"),
         )
         nf.columnconfigure(1, weight=1)
 

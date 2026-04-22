@@ -409,7 +409,7 @@ class DealsTab(ttk.Frame):
         # Auto-mark seen on preview
         self._mark_seen_iids([item])
         cfg = self._get_config()
-        user_agent = cfg.get("user_agent", "RedditDealWatcher/1.0")
+        user_agent = cfg.get("user_agent", "RSSniper/1.0")
         DealPreviewDialog(self, deal, user_agent)
 
     # ── Context menu actions ───────────────────────────────────────────────

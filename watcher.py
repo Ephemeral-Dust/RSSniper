@@ -255,7 +255,7 @@ def check_feeds(
     on_match: Optional[Callable] = None,
 ) -> None:
     feeds_by_name = {f["name"]: f for f in config["feeds"]}
-    user_agent: str = config.get("user_agent", "RedditDealWatcher/1.0")
+    user_agent: str = config.get("user_agent", "RSSniper/1.0")
     now_utc = datetime.now(timezone.utc)
     lookback_days: int = int(
         config.get("max_lookback_days", MAX_LOOKBACK_DAYS)

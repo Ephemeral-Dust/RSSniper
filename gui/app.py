@@ -39,7 +39,7 @@ from gui.log_tab import LogTab, QueueHandler
 class App(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
-        self.title("RedditDealWatcher")
+        self.title("RSSniper")
         self.geometry("1150x720")
         self.minsize(900, 560)
 
@@ -311,9 +311,7 @@ class App(tk.Tk):
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Exit", _on_tray_exit),
         )
-        self._tray_icon = pystray.Icon(
-            "RedditDealWatcher", img, "RedditDealWatcher", menu
-        )
+        self._tray_icon = pystray.Icon("RSSniper", img, "RSSniper", menu)
 
     def _minimize_to_tray(self) -> None:
         if self._tray_icon is None:
@@ -709,7 +707,7 @@ class App(tk.Tk):
     def _show_about(self) -> None:
         messagebox.showinfo(
             "About",
-            "RedditDealWatcher\n\n"
+            "RSSniper\n\n"
             "Monitor RSS feeds for deals matching keywords and price thresholds.\n\n"
             "Feeds tab  →  add/remove/preview RSS feeds\n"
             "Monitors tab  →  configure keyword & price rules\n"

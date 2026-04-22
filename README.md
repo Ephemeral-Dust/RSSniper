@@ -1,4 +1,4 @@
-# RedditDealWatcher
+# RSSniper
 
 A Python desktop application that monitors RSS feeds for posts matching your keywords and optional price thresholds. When a deal is found you get a desktop notification and it appears in the GUI dashboard.
 
@@ -52,7 +52,7 @@ Pillow>=10.0.0
 
 ```bash
 git clone <repo>
-cd RedditDealWatcher
+cd RSSniper
 python -m venv venv
 
 # Windows
@@ -102,23 +102,23 @@ python main.py add-monitor NAME --terms TERM1 TERM2 [--max-price 400] [--feeds F
 
 ## Configuration
 
-`config.json` is created automatically on first run at `%APPDATA%\RedditDealWatcher\config.json` (frozen exe) or the project root (dev mode). All values can be changed via the Settings dialog or by editing the file directly.
+`config.json` is created automatically on first run at `%APPDATA%\RSSniper\config.json` (frozen exe) or the project root (dev mode). All values can be changed via the Settings dialog or by editing the file directly.
 
-| Key                               | Default                 | Description                                           |
-| --------------------------------- | ----------------------- | ----------------------------------------------------- |
-| `check_interval_minutes`          | `15`                    | How often the background scheduler polls feeds        |
-| `check_on_startup`                | `true`                  | Run a check immediately when the app launches         |
-| `max_lookback_days`               | `3`                     | How far back to page through feeds                    |
-| `max_entries_per_feed`            | `1000`                  | Hard cap on entries fetched per feed per check        |
-| `request_timeout_seconds`         | `15`                    | HTTP request timeout                                  |
-| `page_delay_seconds`              | `0.75`                  | Delay between paginated requests (be a good citizen)  |
-| `user_agent`                      | `RedditDealWatcher/1.0` | User-Agent header sent to feeds                       |
-| `notifications.desktop`           | `true`                  | Show Windows desktop toast on new deal                |
-| `notifications.console`           | `true`                  | Append matches to the Log tab                         |
-| `notifications.notify_historical` | `false`                 | Show notifications for DB-scan matches on startup     |
-| `logging.level_filter`            | `"DEBUG"`               | Minimum log level shown in the Log tab                |
-| `logging.save_to_file`            | `false`                 | Write logs to `logs/rdw.log` with rotation            |
-| `theme`                           | `"dark"`                | GUI colour scheme: `"dark"`, `"light"`, or `"system"` |
+| Key                               | Default        | Description                                           |
+| --------------------------------- | -------------- | ----------------------------------------------------- |
+| `check_interval_minutes`          | `15`           | How often the background scheduler polls feeds        |
+| `check_on_startup`                | `true`         | Run a check immediately when the app launches         |
+| `max_lookback_days`               | `3`            | How far back to page through feeds                    |
+| `max_entries_per_feed`            | `1000`         | Hard cap on entries fetched per feed per check        |
+| `request_timeout_seconds`         | `15`           | HTTP request timeout                                  |
+| `page_delay_seconds`              | `0.75`         | Delay between paginated requests (be a good citizen)  |
+| `user_agent`                      | `RSSniper/1.0` | User-Agent header sent to feeds                       |
+| `notifications.desktop`           | `true`         | Show Windows desktop toast on new deal                |
+| `notifications.console`           | `true`         | Append matches to the Log tab                         |
+| `notifications.notify_historical` | `false`        | Show notifications for DB-scan matches on startup     |
+| `logging.level_filter`            | `"DEBUG"`      | Minimum log level shown in the Log tab                |
+| `logging.save_to_file`            | `false`        | Write logs to `logs/rdw.log` with rotation            |
+| `theme`                           | `"dark"`       | GUI colour scheme: `"dark"`, `"light"`, or `"system"` |
 
 ### Monitors
 
@@ -167,7 +167,7 @@ The Log tab shows real-time watcher activity with colour-coded severity levels:
 | `ERROR`   | Red    | Unhandled exceptions, DB errors       |
 
 - The **Level** combobox filters the displayed log in real time. Buffered messages are not discarded — switching back to DEBUG restores full history.
-- **Save log to file** writes to `%APPDATA%\RedditDealWatcher\logs\rdw.log`, rotating at 2 MB with 3 backups kept. Enable this before reproducing a bug to capture a log for support.
+- **Save log to file** writes to `%APPDATA%\RSSniper\logs\rdw.log`, rotating at 2 MB with 3 backups kept. Enable this before reproducing a bug to capture a log for support.
 - Both settings persist across sessions and can also be configured in **Settings → Logging**.
 
 ---
@@ -191,7 +191,7 @@ Export and import your configuration via **Settings → Export…** / **Settings
 
 ## Database
 
-SQLite database at `%APPDATA%\RedditDealWatcher\seen_items.db` (frozen) or project root (dev). Three tables:
+SQLite database at `%APPDATA%\RSSniper\seen_items.db` (frozen) or project root (dev). Three tables:
 
 | Table          | Purpose                                                              |
 | -------------- | -------------------------------------------------------------------- |
@@ -205,7 +205,7 @@ The database is append-only during normal operation. The **Clear** button on the
 
 ## Building the Executable
 
-A single-file Windows exe can be built with PyInstaller. All data files (config, database, logs) are created automatically at runtime in `%APPDATA%\RedditDealWatcher` — nothing needs to be shipped alongside the exe.
+A single-file Windows exe can be built with PyInstaller. All data files (config, database, logs) are created automatically at runtime in `%APPDATA%\RSSniper` — nothing needs to be shipped alongside the exe.
 
 **Prerequisites:** complete the [Installation](#installation) steps above.
 
@@ -214,14 +214,14 @@ A single-file Windows exe can be built with PyInstaller. All data files (config,
 venv\Scripts\pip install pyinstaller
 
 # Build
-venv\Scripts\pyinstaller RedditDealWatcher.spec --clean
+venv\Scripts\pyinstaller RSSniper.spec --clean
 ```
 
-Output: `dist\RedditDealWatcher.exe` — no installer required.
+Output: `dist\RSSniper.exe` — no installer required.
 
 **On first launch the exe will:**
 
-1. Create `%APPDATA%\RedditDealWatcher\` if it does not exist
+1. Create `%APPDATA%\RSSniper\` if it does not exist
 2. Write a default `config.json` with example feeds and monitors
 3. Initialise `seen_items.db`
 

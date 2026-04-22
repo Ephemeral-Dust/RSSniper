@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-RedditDealWatcher — Monitor RSS feeds for deals matching keywords and price thresholds.
+RSSniper — Monitor RSS feeds for deals matching keywords and price thresholds.
 
 Usage:
   python main.py               # Launch GUI (default)
@@ -8,7 +8,7 @@ Usage:
   python main.py watch         # CLI continuous polling
   python main.py check         # CLI single check then exit
   python main.py list          # CLI list feeds and monitors
-  python main.py add-feed NAME URL [--type reddit|rss]
+  python main.py add-feed NAME URL
   python main.py add-monitor NAME --terms TERM1 TERM2 [--max-price 400] [--feeds FEED1 FEED2]
 """
 
@@ -132,7 +132,7 @@ def main() -> None:
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="RedditDealWatcher — Monitor RSS feeds for deals",
+        description="RSSniper — Monitor RSS feeds for deals",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

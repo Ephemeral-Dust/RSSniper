@@ -376,8 +376,6 @@ class FeedsTab(ttk.Frame):
         if not feed_cfg:
             messagebox.showinfo("Preview Feed", "Select a feed first.")
             return
-        user_agent = self._get_config().get(
-            "user_agent", "RedditDealWatcher/1.0"
-        )
+        user_agent = self._get_config().get("user_agent", "RSSniper/1.0")
         conn = self._get_conn() if self._get_conn else None
         FeedPreviewDialog(self, feed_cfg, user_agent, conn=conn)

@@ -1,9 +1,9 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for RedditDealWatcher.
+"""PyInstaller spec for RSSniper.
 
 Build with:
-    pyinstaller RedditDealWatcher.spec
-Output: dist/RedditDealWatcher.exe
+    pyinstaller RSSniper.spec
+Output: dist/RSSniper.exe
 """
 
 from PyInstaller.utils.hooks import collect_submodules, collect_data_files, collect_all
@@ -85,7 +85,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name="RedditDealWatcher",
+    name="RSSniper",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

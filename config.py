@@ -61,7 +61,7 @@ DEFAULT_CONFIG: dict = {
         "level_filter": "DEBUG",
         "save_to_file": False,
     },
-    "user_agent": "RedditDealWatcher/1.0 (personal use)",
+    "user_agent": "RSSniper/1.0 (personal use)",
     "theme": "dark",
     # ── User-defined regex presets (name → regex) ──────────────────────────────
     "match_patterns": {},
