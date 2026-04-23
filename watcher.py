@@ -169,6 +169,7 @@ def fetch_feed(
 
     headers = {"User-Agent": user_agent}
     base_url = feed_cfg["url"]
+    is_reddit = "reddit.com" in base_url
 
     all_entries: list[dict] = []
     seen_ids: set[str] = set()
@@ -176,9 +177,11 @@ def fetch_feed(
     first_page = True
 
     while True:
-        params: dict = {"limit": 100}
-        if after:
-            params["after"] = after
+        params: dict = {}
+        if is_reddit:
+            params["limit"] = 100
+            if after:
+                params["after"] = after
 
         if not first_page:
             time.sleep(page_delay)  # polite delay between paginated requests
@@ -188,6 +191,36 @@ def fetch_feed(
             resp = requests.get(
                 base_url, headers=headers, params=params, timeout=timeout
             )
+            log.debug(
+                f"[{feed_cfg['name']}] initial response: HTTP {resp.status_code}"
+                + (
+                    f"  server={resp.headers.get('Server', '?')}"
+                    f"  cf-ray={resp.headers.get('CF-Ray', '')}"
+                    if resp.status_code != 200
+                    else ""
+                )
+            )
+            if resp.status_code == 403 and resp.headers.get("CF-Ray"):
+                # Cloudflare bot-protection detected — use cloudscraper which
+                # spoofs the TLS fingerprint to bypass the challenge.
+                log.debug(
+                    f"[{feed_cfg['name']}] Cloudflare 403 — retrying with cloudscraper"
+                )
+                try:
+                    import cloudscraper
+
+                    scraper = cloudscraper.create_scraper()
+                    resp = scraper.get(
+                        base_url, params=params, timeout=timeout
+                    )
+                    log.debug(
+                        f"[{feed_cfg['name']}] cloudscraper response: HTTP {resp.status_code}"
+                    )
+                except ImportError:
+                    log.warning(
+                        f"[{feed_cfg['name']}] cloudscraper not installed — "
+                        "install it with: pip install cloudscraper"
+                    )
             resp.raise_for_status()
             parsed = feedparser.parse(resp.content)
         except requests.RequestException as exc:

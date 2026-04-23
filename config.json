@@ -35,40 +35,89 @@
     {
       "name": "spoofee",
       "url": "https://www.spoofee.com/rss.xml"
+    },
+    {
+      "name": "Cragislist - Free",
+      "url": "https://rb.vern.cc/?action=display&region=fortcollins&search=zip%23search%3D2%7Egallery%7E0&bridge=CraigslistBridge&format=Atom"
+    },
+    {
+      "name": "Craigslist - Surface Pro",
+      "url": "https://rb.vern.cc/?action=display&region=fortcollins&search=sss%3Fquery%3Dsurface%2520pro&bridge=CraigslistBridge&format=Atom"
+    },
+    {
+      "name": "techbargins",
+      "url": "https://techbargains.com/rss.xml"
     }
   ],
   "monitors": [
     {
-      "name": "GPU Deals",
-      "terms": ["RTX 4070", "RX 7800 XT", "RX 7900"],
-      "max_price": 400.0,
-      "feeds": ["r/deals", "r/buildapcsales", "r/hardwareswap"],
-      "enabled": false
-    },
-    {
       "name": "Example Game Deal",
-      "terms": ["Elden Ring", "Cyberpunk"],
+      "terms": [
+        "Elden Ring",
+        "Cyberpunk"
+      ],
       "max_price": 20.0,
-      "feeds": ["r/gamedeals"],
+      "feeds": [
+        "r/gamedeals"
+      ],
       "enabled": false
     },
     {
       "name": "Surface Pro",
-      "terms": ["Surface Pro", "Microsoft Surface Pro"],
-      "feeds": ["r/deals", "r/buildapcsales", "r/hardwareswap"],
+      "terms": [
+        "Surface Pro",
+        "Microsoft Surface Pro"
+      ],
+      "feeds": [
+        "r/deals",
+        "r/buildapcsales",
+        "r/hardwareswap"
+      ],
       "enabled": true
     },
     {
       "name": "Laptops",
-      "terms": ["laptop"],
-      "feeds": ["r/hardwareswap"],
+      "terms": [
+        "laptop"
+      ],
+      "feeds": [
+        "r/hardwareswap"
+      ],
       "enabled": false
     },
     {
       "name": "Mouse",
-      "terms": ["mouse"],
-      "feeds": ["spoofee"],
+      "terms": [
+        "mouse"
+      ],
+      "feeds": [
+        "spoofee"
+      ],
       "enabled": true
+    },
+    {
+      "name": "GPU Deals",
+      "terms": [
+        "RTX 4070",
+        "RX 7800 XT",
+        "RX 7900"
+      ],
+      "max_price": 400.0,
+      "feeds": [
+        "r/deals",
+        "r/buildapcsales"
+      ],
+      "enabled": false
+    },
+    {
+      "name": "mouse",
+      "terms": [
+        "mouse"
+      ],
+      "feeds": [
+        "spoofee"
+      ],
+      "enabled": false
     }
   ],
   "notifications": {
